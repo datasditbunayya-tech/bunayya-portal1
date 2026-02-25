@@ -7,10 +7,10 @@
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="document.getElementById('app-loading').innerHTML='<div style=padding:40px;text-align:center><h3 style=color:#991b1b>Gagal memuat halaman</h3><p>Periksa koneksi internet lalu refresh.</p><button onclick=location.reload() style=padding:10px 20px;background:#065f46;color:white;border:none;border-radius:8px;cursor:pointer>Refresh</button></div>'"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-  <!-- Firebase SDK -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  <!-- Firebase SDK (compat version - works with Babel) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyCGs0oOMaaZGe63pRcz_ljdIHHBBzK53S0",
       authDomain: "bunayya-portal.firebaseapp.com",
@@ -19,11 +19,25 @@
       messagingSenderId: "626345727001",
       appId: "1:626345727001:web:f70e99bab5ecef12938688"
     };
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    window.__firebase = { db, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, writeBatch, ready: true };
-    window.dispatchEvent(new Event("firebase-ready"));
-    console.log("✅ Firebase Firestore terhubung!");
+    try {
+      const fbApp = firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+      window.__firebase = {
+        db,
+        collection: (d, c) => d.collection(c),
+        onSnapshot: (ref, cb, err) => ref.onSnapshot(cb, err),
+        doc: (d, c, id) => d.collection(c).doc(id),
+        setDoc: (ref, data) => ref.set(data),
+        deleteDoc: (ref) => ref.delete(),
+        getDocs: (ref) => ref.get(),
+        writeBatch: (d) => d.batch(),
+        ready: true
+      };
+      console.log("✅ Firebase Firestore terhubung!");
+    } catch(e) {
+      console.error("Firebase init error:", e);
+      window.__firebase = { ready: false };
+    }
   </script>
   <style>
 
@@ -1053,10 +1067,9 @@ function App() {
   const [loading, setLoading] = useState(false);
 
   // ── Firebase Firestore Integration ───────────────────────────────────────
-  const SCRIPT_URL = ""; // Google Sheets tidak digunakan lagi
+  const SCRIPT_URL = "";
   const GS_ENABLED = false;
 
-  // Firebase collection mapping
   const FB_COLLECTIONS = {
     studentAttendance: "absensiSiswa",
     teacherAttendance: "absensiGuru",
@@ -1072,13 +1085,12 @@ function App() {
 
   // ── Firebase realtime listeners ──────────────────────────────────────────
   React.useEffect(() => {
-    const waitForFirebase = () => {
+    const tryConnect = () => {
       if (!window.__firebase || !window.__firebase.ready) {
-        setTimeout(waitForFirebase, 300);
+        setTimeout(tryConnect, 500);
         return;
       }
-      const { db, collection, onSnapshot } = window.__firebase;
-      const unsubs = [];
+      const { db } = window.__firebase;
       const collMap = {
         absensiSiswa: "studentAttendance",
         absensiGuru:  "teacherAttendance",
@@ -1091,24 +1103,22 @@ function App() {
         guru:         "teachers",
         siswa:        "students",
       };
-      Object.entries(collMap).forEach(([fbColl, stateKey]) => {
-        const unsub = onSnapshot(collection(db, fbColl), (snap) => {
+      const unsubs = Object.entries(collMap).map(([fbColl, stateKey]) => {
+        return db.collection(fbColl).onSnapshot((snap) => {
           const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-          setData(prev => ({ ...prev, [stateKey]: docs.length > 0 ? docs : prev[stateKey] }));
+          if (docs.length > 0) {
+            setData(prev => ({ ...prev, [stateKey]: docs }));
+          }
           setLastSync(new Date().toLocaleString("id-ID"));
           setSyncStatus("success");
           setTimeout(() => setSyncStatus("idle"), 2000);
         }, (err) => {
-          console.error("Firebase error:", err);
-          setSyncStatus("error");
-          setSyncMsg("❌ Firebase error: " + err.message);
-          setTimeout(() => { setSyncStatus("idle"); setSyncMsg(""); }, 5000);
+          console.error("Firebase listener error:", err);
         });
-        unsubs.push(unsub);
       });
       return () => unsubs.forEach(u => u());
     };
-    const cleanup = waitForFirebase();
+    const cleanup = tryConnect();
     return () => { if (typeof cleanup === "function") cleanup(); };
   }, []);
   // ─────────────────────────────────────────────────────────────────
@@ -1116,7 +1126,6 @@ function App() {
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | success | error
   const [syncMsg, setSyncMsg]       = useState("");
   const [lastSync, setLastSync]     = useState(null);
-  const GS_ENABLED = true;
 
   // Data store
   // Load from localStorage or fallback to MOCK
@@ -1176,18 +1185,16 @@ function App() {
 
   const patchData = (key, val) => {
     setData(d => ({ ...d, [key]: val }));
-    // Simpan ke Firebase Firestore
     const fbColl = FB_COLLECTIONS[key];
     if (!fbColl || !window.__firebase?.ready) return;
-    const { db, collection, doc, setDoc, getDocs, deleteDoc, writeBatch } = window.__firebase;
-    // Sync seluruh collection: hapus semua lalu tulis ulang
+    const { db } = window.__firebase;
     (async () => {
       try {
-        const snap = await getDocs(collection(db, fbColl));
-        const batch = writeBatch(db);
+        const snap = await db.collection(fbColl).get();
+        const batch = db.batch();
         snap.docs.forEach(d => batch.delete(d.ref));
         val.forEach(item => {
-          const ref = doc(collection(db, fbColl), String(item.id));
+          const ref = db.collection(fbColl).doc(String(item.id));
           batch.set(ref, item);
         });
         await batch.commit();
@@ -1266,7 +1273,7 @@ function App() {
     }));
     const updatedAbsSiswa = [...data.studentAttendance, ...newRecords];
     patchData("studentAttendance", updatedAbsSiswa);
-    if (GS_ENABLED) syncCollection("absensiSiswa", newRecords).catch(() => {});
+    syncCollection("absensiSiswa", newRecords).catch(() => {});
     patchForm({ abs_students: null, abs_kelas: "", abs_tanggal: "" });
     alert("✅ Absensi " + newRecords.length + " siswa berhasil disimpan!");
   };
@@ -1281,7 +1288,7 @@ function App() {
     const status = formData.abs_statusGuru || "Hadir";
     const rec = { id: genId(), teacherId: t.id, tanggal: tanggal, kelas: kelas, status: status, teacher: { nama: t.nama } };
     patchData("teacherAttendance", [...data.teacherAttendance, rec]);
-    if (GS_ENABLED) syncCollection("absensiGuru", [rec]).catch(() => {});
+    syncCollection("absensiGuru", [rec]).catch(() => {});
     patchForm({ abs_teacherId: "", abs_kelasGuru: "", abs_tanggalGuru: "", abs_statusGuru: "Hadir" });
     alert("✅ Absensi guru berhasil disimpan!");
   };
@@ -1292,7 +1299,7 @@ function App() {
     const rec = { id: genId(), teacherId: t.id, tanggal: formData.j_tanggal || today(), kelas: formData.j_kelas, mataPelajaran: formData.j_mapel || "", topik: formData.j_topik, kegiatan: formData.j_kegiatan || "", catatan: formData.j_catatan || "", teacher: { nama: t.nama } };
     patchData("journals", [...data.journals, rec]);
     patchForm({ j_teacher: "", j_kelas: "", j_mapel: "", j_topik: "", j_kegiatan: "", j_catatan: "" });
-    if (GS_ENABLED) syncCollection("jurnal", [rec]).catch(() => {});
+    syncCollection("jurnal", [rec]).catch(() => {});
     alert("✅ Jurnal berhasil disimpan!");
   };
 
@@ -1301,7 +1308,7 @@ function App() {
     if (!s || !formData.h_bahasan || !formData.h_hasil) return;
     const rec = { id: genId(), studentId: s.id, tanggal: formData.h_tanggal || today(), kelas: s.class_name, bahasan: formData.h_bahasan, halaman: formData.h_halaman || "", hasil: formData.h_hasil, catatan: formData.h_catatan || "" };
     patchData("dailyReports", [...data.dailyReports, rec]);
-    if (GS_ENABLED) syncCollection("harian", [rec]).catch(() => {});
+    syncCollection("harian", [rec]).catch(() => {});
     alert("✅ Laporan harian berhasil disimpan!");
   };
 
@@ -1322,7 +1329,7 @@ function App() {
       }));
 
     patchData("activities", [...data.activities, ...records]);
-    if (GS_ENABLED) syncCollection("kegiatan", records).catch(() => {});
+    syncCollection("kegiatan", records).catch(() => {});
     const patch = {};
     students.forEach(s => { patch[`kg_p_${kelas}_${s.id}`] = ""; });
     patchForm(patch);
@@ -1334,7 +1341,7 @@ function App() {
     if (!s || !formData.tr_mapel) return;
     const rec = { id: genId(), studentId: s.id, tanggal: today(), kelas: s.class_name, mataPelajaran: formData.tr_mapel, progressSaatIni: parseInt(formData.tr_progress) || 0, progressTotal: parseInt(formData.tr_total) || 100, satuan: formData.tr_satuan || "", hasil: formData.tr_hasil || "Lulus", catatan: formData.tr_catatan || "" };
     patchData("targets", [...data.targets, rec]);
-    if (GS_ENABLED) syncCollection("target", [rec]).catch(() => {});
+    syncCollection("target", [rec]).catch(() => {});
     alert("✅ Target berhasil disimpan!");
   };
 
@@ -1343,7 +1350,7 @@ function App() {
     if (!s || !formData.z_juz || !formData.z_hasil) return;
     const rec = { id: genId(), studentId: s.id, tanggal: formData.z_tanggal || today(), kelas: s.class_name, juz: formData.z_juz, surat: formData.z_surat || "", progress: formData.z_progress || "", hasil: formData.z_hasil, catatan: formData.z_catatan || "" };
     patchData("ziyadah", [...data.ziyadah, rec]);
-    if (GS_ENABLED) syncCollection("ziyadah", [rec]).catch(() => {});
+    syncCollection("ziyadah", [rec]).catch(() => {});
     alert("✅ Ziyadah berhasil disimpan!");
   };
 
@@ -1356,7 +1363,7 @@ function App() {
     const records = students.filter(s => formData[`nm_v_${kelas}_${s.id}`]).map(s => ({ id: genId(), studentId: s.id, tanggal, kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama } }));
     if (!records.length) { alert("Masukkan nilai untuk minimal satu siswa!"); return; }
     patchData("grades", [...data.grades, ...records]);
-    if (GS_ENABLED) syncCollection("nilai", records).catch(() => {});
+    syncCollection("nilai", records).catch(() => {});
     const patch = {};
     students.forEach(s => { patch[`nm_v_${kelas}_${s.id}`] = ""; });
     patchForm(patch);
@@ -1374,27 +1381,29 @@ function App() {
     };
   });
 
-  // ── Form-based POST (no CORS) ────────────────────────────────────
-  const jsonpPost = (payload) => {
-    // POST text/plain = simple request, no CORS preflight needed
-    // Google Apps Script receives via e.postData.contents
-    return fetch(SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify(payload),
-    }).catch(() => {});
+  // ── Firebase sync helpers (menggantikan Google Sheets) ───────────────────
+  const jsonpPost = () => Promise.resolve(); // legacy stub, tidak dipakai
+
+  const syncCollection = async (fbColl, records) => {
+    if (!window.__firebase?.ready) return;
+    const { db } = window.__firebase;
+    try {
+      const snap = await db.collection(fbColl).get();
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      records.forEach(item => {
+        const ref = db.collection(fbColl).doc(String(item.id));
+        batch.set(ref, item);
+      });
+      await batch.commit();
+    } catch(e) { console.error("syncCollection error:", e); }
   };
 
-  const syncCollection = async (sheetKey, records) => {
-    if (!GS_ENABLED) return;
-    const resolved = resolveNames(records, sheetKey);
-    await jsonpPost({ action: "insert", sheet: sheetKey, data: resolved });
-  };
-
-  const syncDelete = async (sheetKey, id) => {
-    if (!GS_ENABLED) return;
-    await jsonpPost({ action: "delete", sheet: sheetKey, id });
+  const syncDelete = async (fbColl, id) => {
+    if (!window.__firebase?.ready) return;
+    try {
+      await window.__firebase.db.collection(fbColl).doc(String(id)).delete();
+    } catch(e) { console.error("syncDelete error:", e); }
   };
 
   // ── Firebase: Sync semua data sekaligus ─────────────────────────────────
@@ -1405,15 +1414,15 @@ function App() {
     }
     setSyncStatus("syncing");
     setSyncMsg("🔄 Menyinkronkan semua data ke Firebase...");
-    const { db, collection, doc, setDoc, getDocs, writeBatch } = window.__firebase;
+    const { db } = window.__firebase;
     try {
       for (const [stateKey, fbColl] of Object.entries(FB_COLLECTIONS)) {
         const items = data[stateKey] || [];
-        const snap = await getDocs(collection(db, fbColl));
-        const batch = writeBatch(db);
+        const snap = await db.collection(fbColl).get();
+        const batch = db.batch();
         snap.docs.forEach(d => batch.delete(d.ref));
         items.forEach(item => {
-          const ref = doc(collection(db, fbColl), String(item.id));
+          const ref = db.collection(fbColl).doc(String(item.id));
           batch.set(ref, item);
         });
         await batch.commit();
@@ -1448,11 +1457,10 @@ function App() {
     const { collection: collKey, id } = deleteConfirm;
     patchData(collKey, data[collKey].filter(i => i.id !== id));
     setDeleteConfirm(null);
-    // Hapus dari Firebase Firestore
     const fbColl = FB_COLLECTIONS[collKey];
     if (fbColl && window.__firebase?.ready) {
-      const { db, collection, doc, deleteDoc } = window.__firebase;
-      deleteDoc(doc(collection(db, fbColl), String(id))).catch(err => console.error("Delete error:", err));
+      window.__firebase.db.collection(fbColl).doc(String(id)).delete()
+        .catch(err => console.error("Delete error:", err));
     }
   };
 
@@ -1624,7 +1632,7 @@ function App() {
           <PortalGuru menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} />
         )}
         {portal === "siswa" && (
-          <PortalSiswa menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} syncCollection={GS_ENABLED ? syncCollection : null} />
+          <PortalSiswa menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} syncCollection={syncCollection} />
         )}
         {portal === "wali" && (
           <PortalWali menu={menu} data={data} formData={formData} patchForm={patchForm} user={user} />
