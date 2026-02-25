@@ -1820,8 +1820,8 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
   if (menu === "dashboard") {
 
     // ── BarChart vertikal SVG ─────────────────────────────────────────────
-    const BarChart = ({ items, color = "#1d7a5f", maxOverride }) => {
-      const W = 48, GAP = 12, H = 120, PAD_LEFT = 36, PAD_BOT = 44, PAD_TOP = 16;
+    const BarChart = ({ items, color = "#1d7a5f", maxOverride, heightPx = 60 }) => {
+      const W = 48, GAP = 12, H = heightPx, PAD_LEFT = 36, PAD_BOT = 44, PAD_TOP = 16;
       const rawMax = maxOverride || Math.max(...items.map(i => i.val), 1);
 
       // Hitung step garis Y yang rapi sesuai data
@@ -1908,56 +1908,52 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
       return tanggal >= dashStart && tanggal <= dashEnd;
     };
 
-    // ── Data chart: hanya tampil yang ada datanya ─────────────────────────
+    // ── Data chart: semua kelas & semua guru selalu tampil ───────────────────
     const kelasList = KELAS_LIST.filter(k => k !== "Semua");
 
-    // Absensi Siswa — per kelas, hanya kelas yang ada datanya
+    // Absensi Siswa — semua kelas tampil
     const absSiswaPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inRange(a.tanggal)).length }))
-      .filter(x => x.val > 0);
+      .map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
 
-    // Absensi Guru — per nama guru yang BENAR-BENAR ada di data absensi
-    const absGuruMap = {};
-    data.teacherAttendance.filter(a => inRange(a.tanggal)).forEach(a => {
-      const guru = data.teachers.find(t => t.id === a.teacherId);
-      const nama = guru ? guru.nama : (a.namaGuru || a.teacherId || "?");
-      absGuruMap[nama] = (absGuruMap[nama] || 0) + 1;
-    });
-    const absGuruPerNama = Object.entries(absGuruMap).map(([lbl, val]) => ({ lbl, val }));
+    // Absensi Guru — SEMUA guru tampil meskipun 0
+    const absGuruPerNama = data.teachers.map(t => ({
+      lbl: t.nama,
+      val: data.teacherAttendance.filter(a => a.teacherId === t.id && inRange(a.tanggal)).length
+    }));
 
-    // Jurnal — per nama guru yang punya jurnal
-    const jurnalGuruMap = {};
-    data.journals.filter(j => inRange(j.tanggal)).forEach(j => {
-      const guru = data.teachers.find(t => t.id === j.teacherId);
-      const nama = guru ? guru.nama : (j.namaGuru || j.teacherId || "?");
-      jurnalGuruMap[nama] = (jurnalGuruMap[nama] || 0) + 1;
-    });
-    const jurnalPerGuru = Object.entries(jurnalGuruMap).map(([lbl, val]) => ({ lbl, val }));
+    // Jurnal — SEMUA guru tampil meskipun 0
+    const jurnalPerGuru = data.teachers.map(t => ({
+      lbl: t.nama,
+      val: data.journals.filter(j => j.teacherId === t.id && inRange(j.tanggal)).length
+    }));
 
-    // Harian — per kelas yang ada datanya
+    // Hitung maxVal bersama untuk absSiswa, absGuru, jurnal agar tinggi sumbu sama
+    const sharedMax = Math.max(
+      ...absSiswaPerKelas.map(x => x.val),
+      ...absGuruPerNama.map(x => x.val),
+      ...jurnalPerGuru.map(x => x.val),
+      1
+    );
+
+    // Harian — semua kelas tampil
     const harianPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k && inRange(r.tanggal)).length }))
-      .filter(x => x.val > 0);
+      .map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k && inRange(r.tanggal)).length }));
 
-    // Nilai — per kelas yang ada datanya
+    // Nilai — semua kelas tampil
     const nilaiPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k && inRange(g.tanggal)).length }))
-      .filter(x => x.val > 0);
+      .map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k && inRange(g.tanggal)).length }));
 
-    // Kegiatan — per kelas yang ada datanya
+    // Kegiatan — semua kelas tampil
     const kegiatanPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k && inRange(a.tanggal)).length }))
-      .filter(x => x.val > 0);
+      .map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
 
-    // Target — per kelas yang ada datanya
+    // Target — semua kelas tampil
     const targetPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k && inRange(t.tanggal)).length }))
-      .filter(x => x.val > 0);
+      .map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k && inRange(t.tanggal)).length }));
 
-    // Ziyadah — per kelas yang ada datanya
+    // Ziyadah — semua kelas tampil
     const ziyadahPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k && inRange(z.tanggal)).length }))
-      .filter(x => x.val > 0);
+      .map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k && inRange(z.tanggal)).length }));
 
     const CHART_COLORS = {
       absSiswa: "#1d7a5f", absGuru: "#2563a8", jurnal: "#7c3aed",
@@ -1965,24 +1961,18 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
       nilai: "#9333ea"
     };
 
-    const ChartCard = ({ title, items, color }) => (
+    const ChartCard = ({ title, items, color, maxOverride, heightPx }) => (
       <div className="card">
         <div className="card-header">
           <div className="card-title">{title}</div>
           <div className="flex gap-2 items-center">
-            {items.length > 0 && (
-              <span style={{ fontSize:12, color:"#888" }}>{items.length} entri · {items.reduce((a,i)=>a+i.val,0)} total data</span>
-            )}
+            <span style={{ fontSize:12, color:"#888" }}>{items.reduce((a,i)=>a+i.val,0)} total</span>
           </div>
         </div>
         <div className="card-body" style={{ overflowX:"auto" }}>
           {items.length === 0
-            ? <div style={{ padding:"40px 20px", textAlign:"center", color:"#bbb" }}>
-                <div style={{ fontSize:36, marginBottom:8 }}>📭</div>
-                <div style={{ fontSize:14, fontWeight:600, color:"#aaa" }}>Belum ada data</div>
-                <div style={{ fontSize:12, color:"#ccc", marginTop:4 }}>Diagram akan muncul otomatis setelah ada inputan</div>
-              </div>
-            : <BarChart items={items} color={color} />
+            ? <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>📭 Belum ada data</div>
+            : <BarChart items={items} color={color} maxOverride={maxOverride} heightPx={heightPx} />
           }
         </div>
       </div>
@@ -2052,9 +2042,9 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
         {/* 8 diagram vertikal kebawah, full width */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-          <ChartCard title="📋 Absensi Siswa per Kelas"       items={absSiswaPerKelas} color={CHART_COLORS.absSiswa} />
-          <ChartCard title="🗒️ Absensi Guru per Nama"        items={absGuruPerNama}   color={CHART_COLORS.absGuru} />
-          <ChartCard title="📝 Jurnal per Guru"               items={jurnalPerGuru}    color={CHART_COLORS.jurnal} />
+          <ChartCard title="📋 Absensi Siswa per Kelas"       items={absSiswaPerKelas} color={CHART_COLORS.absSiswa} maxOverride={sharedMax} />
+          <ChartCard title="🗒️ Absensi Guru per Nama"        items={absGuruPerNama}   color={CHART_COLORS.absGuru}  maxOverride={Math.max(sharedMax, data.teachers.length)} heightPx={80} />
+          <ChartCard title="📝 Jurnal per Guru"               items={jurnalPerGuru}    color={CHART_COLORS.jurnal}   maxOverride={Math.max(sharedMax, data.teachers.length)} heightPx={80} />
           <ChartCard title="📄 Laporan Harian per Kelas"      items={harianPerKelas}   color={CHART_COLORS.harian} />
           <ChartCard title="📊 Rekap Nilai per Kelas"         items={nilaiPerKelas}    color={CHART_COLORS.nilai} />
           <ChartCard title="🎯 Laporan Kegiatan per Kelas"    items={kegiatanPerKelas} color={CHART_COLORS.kegiatan} />
