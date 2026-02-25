@@ -2043,8 +2043,8 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
         {/* 8 diagram vertikal kebawah, full width */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <ChartCard title="📋 Absensi Siswa per Kelas"       items={absSiswaPerKelas} color={CHART_COLORS.absSiswa} maxOverride={sharedMax} />
-          <ChartCard title="🗒️ Absensi Guru per Nama"        items={absGuruPerNama}   color={CHART_COLORS.absGuru}  maxOverride={Math.max(sharedMax, data.teachers.length)} heightPx={80} />
-          <ChartCard title="📝 Jurnal per Guru"               items={jurnalPerGuru}    color={CHART_COLORS.jurnal}   maxOverride={Math.max(sharedMax, data.teachers.length)} heightPx={80} />
+          <ChartCard title="🗒️ Absensi Guru per Nama"        items={absGuruPerNama}   color={CHART_COLORS.absGuru}  maxOverride={Math.max(...absGuruPerNama.map(x=>x.val), 30)} heightPx={100} />
+          <ChartCard title="📝 Jurnal per Guru"               items={jurnalPerGuru}    color={CHART_COLORS.jurnal}   maxOverride={Math.max(...jurnalPerGuru.map(x=>x.val), 30)}  heightPx={100} />
           <ChartCard title="📄 Laporan Harian per Kelas"      items={harianPerKelas}   color={CHART_COLORS.harian} />
           <ChartCard title="📊 Rekap Nilai per Kelas"         items={nilaiPerKelas}    color={CHART_COLORS.nilai} />
           <ChartCard title="🎯 Laporan Kegiatan per Kelas"    items={kegiatanPerKelas} color={CHART_COLORS.kegiatan} />
@@ -2431,46 +2431,6 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
   if (menu === "rekap-nilai") {
     return (
       <div>
-        {/* Riwayat */}
-        <div className="card mb-4">
-          <div className="card-header">
-            <div className="card-title">📋 Riwayat Nilai</div>
-            <div className="flex gap-2 wrap">
-              {["filterNilaiKelas", "filterNilaiMapel"].map((key, idx) => (
-                <div key={key} className="select-wrap" style={{ width: 150 }}>
-                  <select className="select" value={formData[key] || "Semua"} onChange={e => patchForm({ [key]: e.target.value })}>
-                    {idx === 0 ? KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>) : [<option key="s" value="Semua">Semua Mapel</option>, ...data.subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)]}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="card-body">
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Tanggal</th><th>Nama</th><th>Kelas</th><th>Mapel</th><th>Jenis</th><th>Nilai</th><th>Aksi</th></tr></thead>
-                <tbody>
-                  {data.grades.filter(g => {
-                    const fk = formData.filterNilaiKelas || "Semua";
-                    const fm = formData.filterNilaiMapel || "Semua";
-                    return (fk === "Semua" || g.kelas === fk) && (fm === "Semua" || g.mataPelajaran === fm);
-                  }).map(g => (
-                    <tr key={g.id}>
-                      <td className="text-sm">{g.tanggal}</td>
-                      <td>{g.student?.nama}</td>
-                      <td><Badge variant="blue">{g.kelas}</Badge></td>
-                      <td>{g.mataPelajaran}</td>
-                      <td><Badge variant="gray">{g.jenisNilai}</Badge></td>
-                      <td style={{ fontWeight: 700, color: g.skor >= 80 ? "#065f46" : g.skor >= 60 ? "#92400e" : "#991b1b" }}>{g.skor}</td>
-                      <td><button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("grades", g.id, g.student?.nama || g.mataPelajaran)}><Icon.Trash /></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
         {/* Per Kelas Cards */}
         <div className="grid grid-3">
           {KELAS_LIST.filter(k => k !== "Semua").map(kelas => {
@@ -2557,6 +2517,46 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
               </div>
             );
           })}
+        </div>
+
+        {/* Riwayat */}
+        <div className="card mb-4">
+          <div className="card-header">
+            <div className="card-title">📋 Riwayat Nilai</div>
+            <div className="flex gap-2 wrap">
+              {["filterNilaiKelas", "filterNilaiMapel"].map((key, idx) => (
+                <div key={key} className="select-wrap" style={{ width: 150 }}>
+                  <select className="select" value={formData[key] || "Semua"} onChange={e => patchForm({ [key]: e.target.value })}>
+                    {idx === 0 ? KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>) : [<option key="s" value="Semua">Semua Mapel</option>, ...data.subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)]}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="card-body">
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Tanggal</th><th>Nama</th><th>Kelas</th><th>Mapel</th><th>Jenis</th><th>Nilai</th><th>Aksi</th></tr></thead>
+                <tbody>
+                  {data.grades.filter(g => {
+                    const fk = formData.filterNilaiKelas || "Semua";
+                    const fm = formData.filterNilaiMapel || "Semua";
+                    return (fk === "Semua" || g.kelas === fk) && (fm === "Semua" || g.mataPelajaran === fm);
+                  }).map(g => (
+                    <tr key={g.id}>
+                      <td className="text-sm">{g.tanggal}</td>
+                      <td>{g.student?.nama}</td>
+                      <td><Badge variant="blue">{g.kelas}</Badge></td>
+                      <td>{g.mataPelajaran}</td>
+                      <td><Badge variant="gray">{g.jenisNilai}</Badge></td>
+                      <td style={{ fontWeight: 700, color: g.skor >= 80 ? "#065f46" : g.skor >= 60 ? "#92400e" : "#991b1b" }}>{g.skor}</td>
+                      <td><button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("grades", g.id, g.student?.nama || g.mataPelajaran)}><Icon.Trash /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -3043,62 +3043,6 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
   if (menu === "kegiatan") {
     return (
       <div>
-        {/* Riwayat */}
-        <div className="card mb-4">
-          <div className="card-header"><div className="card-title">🎯 Riwayat Laporan Kegiatan</div>
-            <div className="flex gap-2 items-center" style={{flexWrap:"wrap",gap:8}}>
-              <div className="select-wrap" style={{width:140}}>
-                <select className="select" style={{fontSize:13}} value={formData.kg_fkelas || "Semua"} onChange={e => patchForm({kg_fkelas: e.target.value, kg_fnama: ""})}>
-                  {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
-                </select>
-              </div>
-              <div className="select-wrap" style={{width:180}}>
-                <select className="select" style={{fontSize:13}} value={formData.kg_fnama || ""} onChange={e => patchForm({kg_fnama: e.target.value})}>
-                  <option value="">Semua Nama</option>
-                  {data.students.filter(s => !formData.kg_fkelas || formData.kg_fkelas === "Semua" || s.class_name === formData.kg_fkelas).map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-                </select>
-              </div>
-              <div className="select-wrap" style={{width:150}}>
-                <select className="select" style={{fontSize:13}} value={formData.kg_fbulan || ""} onChange={e => patchForm({kg_fbulan: e.target.value})}>
-                  <option value="">Semua Bulan</option>
-                  {["01","02","03","04","05","06","07","08","09","10","11","12"].map(bln => (
-                    <option key={bln} value={bln}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(bln)-1]}</option>
-                  ))}
-                </select>
-              </div>
-            </div></div>
-          <div className="card-body">
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Tanggal</th><th>Nama Siswa</th><th>Kelas</th><th>Mata Pelajaran</th><th>Penilaian</th><th>Aksi</th></tr></thead>
-                <tbody>
-                  {(() => {
-                    const fkg = data.activities.filter(a =>
-                      (!formData.kg_fkelas || formData.kg_fkelas === "Semua" || a.kelas === formData.kg_fkelas)
-                      && (!formData.kg_fnama || a.studentId === formData.kg_fnama)
-                      && (!formData.kg_fbulan || (a.tanggal && a.tanggal.slice(5,7) === formData.kg_fbulan))
-                    );
-                    if (fkg.length === 0) return <tr><td colSpan={6} className="empty-state">Belum ada data laporan kegiatan</td></tr>;
-                    return fkg.map(a => {
-                      const s = data.students.find(s => s.id === a.studentId);
-                      return (
-                        <tr key={a.id}>
-                          <td className="text-sm">{a.tanggal}</td>
-                          <td style={{fontWeight:600}}>{s?.nama}</td>
-                          <td><Badge variant="blue">{a.kelas}</Badge></td>
-                          <td>{a.kategori || a.mataPelajaran}</td>
-                          <td><StatusBadge status={a.penilaian} /></td>
-                          <td><button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("activities", a.id, s?.nama)}><Icon.Trash /></button></td>
-                        </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
         {/* Per-Kelas Grid Input */}
         <div className="grid grid-3">
           {KELAS_LIST.filter(k => k !== "Semua").map(kelas => {
@@ -3204,6 +3148,62 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
               </div>
             );
           })}
+        </div>
+
+        {/* Riwayat */}
+        <div className="card mb-4">
+          <div className="card-header"><div className="card-title">🎯 Riwayat Laporan Kegiatan</div>
+            <div className="flex gap-2 items-center" style={{flexWrap:"wrap",gap:8}}>
+              <div className="select-wrap" style={{width:140}}>
+                <select className="select" style={{fontSize:13}} value={formData.kg_fkelas || "Semua"} onChange={e => patchForm({kg_fkelas: e.target.value, kg_fnama: ""})}>
+                  {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </div>
+              <div className="select-wrap" style={{width:180}}>
+                <select className="select" style={{fontSize:13}} value={formData.kg_fnama || ""} onChange={e => patchForm({kg_fnama: e.target.value})}>
+                  <option value="">Semua Nama</option>
+                  {data.students.filter(s => !formData.kg_fkelas || formData.kg_fkelas === "Semua" || s.class_name === formData.kg_fkelas).map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
+                </select>
+              </div>
+              <div className="select-wrap" style={{width:150}}>
+                <select className="select" style={{fontSize:13}} value={formData.kg_fbulan || ""} onChange={e => patchForm({kg_fbulan: e.target.value})}>
+                  <option value="">Semua Bulan</option>
+                  {["01","02","03","04","05","06","07","08","09","10","11","12"].map(bln => (
+                    <option key={bln} value={bln}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(bln)-1]}</option>
+                  ))}
+                </select>
+              </div>
+            </div></div>
+          <div className="card-body">
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Tanggal</th><th>Nama Siswa</th><th>Kelas</th><th>Mata Pelajaran</th><th>Penilaian</th><th>Aksi</th></tr></thead>
+                <tbody>
+                  {(() => {
+                    const fkg = data.activities.filter(a =>
+                      (!formData.kg_fkelas || formData.kg_fkelas === "Semua" || a.kelas === formData.kg_fkelas)
+                      && (!formData.kg_fnama || a.studentId === formData.kg_fnama)
+                      && (!formData.kg_fbulan || (a.tanggal && a.tanggal.slice(5,7) === formData.kg_fbulan))
+                    );
+                    if (fkg.length === 0) return <tr><td colSpan={6} className="empty-state">Belum ada data laporan kegiatan</td></tr>;
+                    return fkg.map(a => {
+                      const s = data.students.find(s => s.id === a.studentId);
+                      return (
+                        <tr key={a.id}>
+                          <td className="text-sm">{a.tanggal}</td>
+                          <td style={{fontWeight:600}}>{s?.nama}</td>
+                          <td><Badge variant="blue">{a.kelas}</Badge></td>
+                          <td>{a.kategori || a.mataPelajaran}</td>
+                          <td><StatusBadge status={a.penilaian} /></td>
+                          <td><button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("activities", a.id, s?.nama)}><Icon.Trash /></button></td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     );
