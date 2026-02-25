@@ -1821,67 +1821,79 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
     // ── BarChart vertikal SVG ─────────────────────────────────────────────
     const BarChart = ({ items, color = "#1d7a5f", maxOverride }) => {
-      const W = 72, GAP = 18, H = 260, PAD_LEFT = 44, PAD_BOT = 52, PAD_TOP = 24;
-      const maxVal = maxOverride || Math.max(...items.map(i => i.val), 1);
+      const W = 48, GAP = 12, H = 120, PAD_LEFT = 36, PAD_BOT = 44, PAD_TOP = 16;
+      const rawMax = maxOverride || Math.max(...items.map(i => i.val), 1);
+
+      // Hitung step garis Y yang rapi sesuai data
+      const niceStep = (max) => {
+        if (max <= 5)  return 1;
+        if (max <= 10) return 2;
+        if (max <= 20) return 5;
+        if (max <= 50) return 10;
+        if (max <= 100) return 20;
+        return Math.ceil(max / 5 / 10) * 10;
+      };
+      const step = niceStep(rawMax);
+      const maxVal = Math.ceil(rawMax / step) * step; // bulatkan ke kelipatan step
+      // Buat array garis Y: 0, step, 2*step, ... maxVal
+      const yTicks = [];
+      for (let v = 0; v <= maxVal; v += step) yTicks.push(v);
+
       const totalW = items.length * W + (items.length - 1) * GAP + PAD_LEFT + 24;
-      const yLines = [0, 0.25, 0.5, 0.75, 1];
+      const colorAlpha = color + "22";
+
       const shortLabel = (lbl) => {
         return lbl.replace("Kelas ", "Kls ").replace("Ustadz ", "Ust. ").replace("Ustadzah ", "Ust. ");
       };
-      const colorAlpha = color + "22";
+
       if (items.length === 0) return <div className="empty-state">Belum ada data</div>;
       return (
         <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)} preserveAspectRatio="xMidYMin meet" style={{ overflow:"visible", display:"block", maxWidth:"100%" }}>
-          {/* Background stripes */}
-          {yLines.slice(1).map((frac, fi) => {
-            const y = PAD_TOP + H - frac * H;
-            const nextY = PAD_TOP + H - (yLines[fi] * H);
+          {/* Background stripes selang-seling */}
+          {yTicks.slice(1).map((v, fi) => {
+            const y     = PAD_TOP + H - (v / maxVal) * H;
+            const nextY = PAD_TOP + H - ((v - step) / maxVal) * H;
             return fi % 2 === 0
-              ? <rect key={frac} x={PAD_LEFT} y={y} width={totalW - PAD_LEFT} height={nextY - y} fill={colorAlpha} />
+              ? <rect key={v} x={PAD_LEFT} y={y} width={totalW - PAD_LEFT} height={nextY - y} fill={colorAlpha} />
               : null;
           })}
-          {/* Grid lines & Y labels */}
-          {yLines.map(frac => {
-            const y = PAD_TOP + H - frac * H;
-            const val = Math.round(frac * maxVal);
+
+          {/* Garis sumbu Y — bertambah otomatis sesuai data */}
+          {yTicks.map(v => {
+            const y = PAD_TOP + H - (v / maxVal) * H;
             return (
-              <g key={frac}>
-                <line x1={PAD_LEFT} y1={y} x2={totalW} y2={y} stroke="#e0e0e0" strokeWidth="1" strokeDasharray={frac === 0 ? "0" : "5 4"} />
-                <text x={PAD_LEFT - 6} y={y + 4} textAnchor="end" fontSize="11" fill="#aaa" fontWeight="600">{val}</text>
+              <g key={v}>
+                <line x1={PAD_LEFT} y1={y} x2={totalW} y2={y}
+                  stroke={v === 0 ? "#bbb" : "#e0e0e0"}
+                  strokeWidth={v === 0 ? 2 : 1}
+                  strokeDasharray={v === 0 ? "0" : "5 4"} />
+                <text x={PAD_LEFT - 6} y={y + 4} textAnchor="end" fontSize="9" fill="#aaa" fontWeight="600">{v}</text>
               </g>
             );
           })}
 
           {/* Bars */}
           {items.map((item, i) => {
-            const x = PAD_LEFT + i * (W + GAP);
-            const barH = maxVal > 0 ? Math.max((item.val / maxVal) * H, item.val > 0 ? 8 : 2) : 2;
+            const x    = PAD_LEFT + i * (W + GAP);
+            const barH = maxVal > 0 ? Math.max((item.val / maxVal) * H, item.val > 0 ? 6 : 2) : 2;
             const barY = PAD_TOP + H - barH;
             const label = shortLabel(item.lbl);
-            // wrap label: each word on new line
             const words = label.split(" ");
             return (
               <g key={i}>
-                {/* Bar gradient shadow */}
-                <rect x={x + 4} y={barY + 4} width={W} height={barH} rx="7" fill="rgba(0,0,0,.08)" />
-                {/* Bar fill */}
-                <rect x={x} y={barY} width={W} height={barH} rx="7" fill={color} />
-                {/* Shine on top */}
-                <rect x={x + 4} y={barY + 4} width={W - 8} height={Math.min(barH - 8, 20)} rx="4" fill="rgba(255,255,255,.18)" />
-                {/* Value on top */}
+                <rect x={x + 3} y={barY + 3} width={W} height={barH} rx="6" fill="rgba(0,0,0,.07)" />
+                <rect x={x} y={barY} width={W} height={barH} rx="6" fill={color} />
+                <rect x={x + 4} y={barY + 4} width={W - 8} height={Math.min(barH - 8, 18)} rx="4" fill="rgba(255,255,255,.18)" />
                 {item.val > 0 && (
-                  <text x={x + W/2} y={barY - 7} textAnchor="middle" fontSize="14" fontWeight="800" fill={color}>{item.val}</text>
+                  <text x={x + W/2} y={barY - 6} textAnchor="middle" fontSize="11" fontWeight="800" fill={color}>{item.val}</text>
                 )}
-                {/* X label lines */}
                 {words.map((word, wi) => (
-                  <text key={wi} x={x + W/2} y={PAD_TOP + H + 18 + wi * 14} textAnchor="middle" fontSize="11" fill="#555" fontWeight="600">{word}</text>
+                  <text key={wi} x={x + W/2} y={PAD_TOP + H + 14 + wi * 12} textAnchor="middle" fontSize="10" fill="#555" fontWeight="600">{word}</text>
                 ))}
               </g>
             );
           })}
 
-          {/* Baseline */}
-          <line x1={PAD_LEFT} y1={PAD_TOP + H} x2={totalW} y2={PAD_TOP + H} stroke="#bbb" strokeWidth="2" />
           {/* Y-axis vertical line */}
           <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={PAD_TOP + H} stroke="#ccc" strokeWidth="1.5" />
         </svg>
@@ -1896,16 +1908,56 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
       return tanggal >= dashStart && tanggal <= dashEnd;
     };
 
-    // ── Data per kelas (filtered) ─────────────────────────────────────────
+    // ── Data chart: hanya tampil yang ada datanya ─────────────────────────
     const kelasList = KELAS_LIST.filter(k => k !== "Semua");
-    const absSiswaPerKelas   = kelasList.map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
-    const harianPerKelas     = kelasList.map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k && inRange(r.tanggal)).length }));
-    const kegiatanPerKelas   = kelasList.map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
-    const targetPerKelas     = kelasList.map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k && inRange(t.tanggal)).length }));
-    const ziyadahPerKelas    = kelasList.map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k && inRange(z.tanggal)).length }));
-    const absGuruPerNama     = data.teachers.map(t => ({ lbl: t.nama, val: data.teacherAttendance.filter(a => a.teacherId === t.id && inRange(a.tanggal)).length }));
-    const jurnalPerGuru      = data.teachers.map(t => ({ lbl: t.nama, val: data.journals.filter(j => j.teacherId === t.id && inRange(j.tanggal)).length }));
-    const nilaiPerKelas      = kelasList.map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k && inRange(g.tanggal)).length }));
+
+    // Absensi Siswa — per kelas, hanya kelas yang ada datanya
+    const absSiswaPerKelas = kelasList
+      .map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inRange(a.tanggal)).length }))
+      .filter(x => x.val > 0);
+
+    // Absensi Guru — per nama guru yang BENAR-BENAR ada di data absensi
+    const absGuruMap = {};
+    data.teacherAttendance.filter(a => inRange(a.tanggal)).forEach(a => {
+      const guru = data.teachers.find(t => t.id === a.teacherId);
+      const nama = guru ? guru.nama : (a.namaGuru || a.teacherId || "?");
+      absGuruMap[nama] = (absGuruMap[nama] || 0) + 1;
+    });
+    const absGuruPerNama = Object.entries(absGuruMap).map(([lbl, val]) => ({ lbl, val }));
+
+    // Jurnal — per nama guru yang punya jurnal
+    const jurnalGuruMap = {};
+    data.journals.filter(j => inRange(j.tanggal)).forEach(j => {
+      const guru = data.teachers.find(t => t.id === j.teacherId);
+      const nama = guru ? guru.nama : (j.namaGuru || j.teacherId || "?");
+      jurnalGuruMap[nama] = (jurnalGuruMap[nama] || 0) + 1;
+    });
+    const jurnalPerGuru = Object.entries(jurnalGuruMap).map(([lbl, val]) => ({ lbl, val }));
+
+    // Harian — per kelas yang ada datanya
+    const harianPerKelas = kelasList
+      .map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k && inRange(r.tanggal)).length }))
+      .filter(x => x.val > 0);
+
+    // Nilai — per kelas yang ada datanya
+    const nilaiPerKelas = kelasList
+      .map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k && inRange(g.tanggal)).length }))
+      .filter(x => x.val > 0);
+
+    // Kegiatan — per kelas yang ada datanya
+    const kegiatanPerKelas = kelasList
+      .map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k && inRange(a.tanggal)).length }))
+      .filter(x => x.val > 0);
+
+    // Target — per kelas yang ada datanya
+    const targetPerKelas = kelasList
+      .map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k && inRange(t.tanggal)).length }))
+      .filter(x => x.val > 0);
+
+    // Ziyadah — per kelas yang ada datanya
+    const ziyadahPerKelas = kelasList
+      .map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k && inRange(z.tanggal)).length }))
+      .filter(x => x.val > 0);
 
     const CHART_COLORS = {
       absSiswa: "#1d7a5f", absGuru: "#2563a8", jurnal: "#7c3aed",
@@ -1915,9 +1967,23 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
     const ChartCard = ({ title, items, color }) => (
       <div className="card">
-        <div className="card-header"><div className="card-title">{title}</div><div className="text-xs text-muted">{items.reduce((a,i)=>a+i.val,0)} total</div></div>
+        <div className="card-header">
+          <div className="card-title">{title}</div>
+          <div className="flex gap-2 items-center">
+            {items.length > 0 && (
+              <span style={{ fontSize:12, color:"#888" }}>{items.length} entri · {items.reduce((a,i)=>a+i.val,0)} total data</span>
+            )}
+          </div>
+        </div>
         <div className="card-body" style={{ overflowX:"auto" }}>
-          <BarChart items={items} color={color} />
+          {items.length === 0
+            ? <div style={{ padding:"40px 20px", textAlign:"center", color:"#bbb" }}>
+                <div style={{ fontSize:36, marginBottom:8 }}>📭</div>
+                <div style={{ fontSize:14, fontWeight:600, color:"#aaa" }}>Belum ada data</div>
+                <div style={{ fontSize:12, color:"#ccc", marginTop:4 }}>Diagram akan muncul otomatis setelah ada inputan</div>
+              </div>
+            : <BarChart items={items} color={color} />
+          }
         </div>
       </div>
     );
