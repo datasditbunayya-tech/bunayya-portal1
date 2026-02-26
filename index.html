@@ -603,14 +603,22 @@
           display: flex; align-items: center; justify-content: space-between;
           position: relative;
           overflow: hidden;
-          min-height: 90px;
+          min-height: 100px;
           box-shadow: 0 4px 20px rgba(0,0,0,.15);
           transition: background .5s;
+          background-size: cover;
+          background-position: center;
         }
+        .lp-banner-overlay {
+          position: absolute; inset: 0;
+          background: linear-gradient(135deg, rgba(0,0,0,.45), rgba(0,0,0,.2));
+          border-radius: 20px;
+        }
+        .lp-banner-content { position: relative; z-index: 1; flex:1; }
         .lp-banner-text-title { font-size: 17px; font-weight: 800; color: white; }
-        .lp-banner-text-sub { font-size: 12px; color: rgba(255,255,255,.8); margin-top: 2px; }
-        .lp-banner-icon { font-size: 36px; opacity: .85; }
+        .lp-banner-text-sub { font-size: 12px; color: rgba(255,255,255,.85); margin-top: 2px; }
         .lp-banner-arrow {
+          position: relative; z-index: 1;
           width: 32px; height: 32px; border-radius: 50%;
           background: rgba(255,255,255,.25);
           display: flex; align-items: center; justify-content: center;
@@ -1699,11 +1707,13 @@ function App() {
 // ─── LOGIN PAGE ───────────────────────────────────────────────────────────────
 function LoginPage({ loginRole, setLoginRole, loginForm, setLoginForm, loginError, handleLogin, data, loginConfig = {} }) {
   const [bannerSlide, setBannerSlide] = useState(0);
-  const banners = [
-    { title: "Selamat Datang", sub: "Portal Pendidikan Bunayya", bg: "linear-gradient(135deg,#1a8a5a,#27ae60)", icon: "🕌" },
-    { title: "Pantau Perkembangan", sub: "Anak Anda setiap hari", bg: "linear-gradient(135deg,#1565c0,#1e88e5)", icon: "📊" },
-    { title: "Generasi Qur'ani", sub: "Berakhlak & Berprestasi", bg: "linear-gradient(135deg,#6a1b9a,#9c27b0)", icon: "📖" },
+
+  const defaultSlides = [
+    { title: "Selamat Datang", sub: "Portal Pendidikan Bunayya", bg: "linear-gradient(135deg,#1a8a5a,#27ae60)", imgUrl: null },
+    { title: "Pantau Perkembangan", sub: "Anak Anda setiap hari",  bg: "linear-gradient(135deg,#1565c0,#1e88e5)", imgUrl: null },
+    { title: "Generasi Qur'ani",   sub: "Berakhlak & Berprestasi", bg: "linear-gradient(135deg,#6a1b9a,#9c27b0)", imgUrl: null },
   ];
+  const banners = (loginConfig.slides && loginConfig.slides.length > 0) ? loginConfig.slides : defaultSlides;
 
   // Gunakan loginConfig jika ada, fallback ke default
   const namaSekolah  = loginConfig.namaSekolah  || "Bunayya Islamic School";
@@ -1817,12 +1827,16 @@ function LoginPage({ loginRole, setLoginRole, loginForm, setLoginForm, loginErro
 
           {/* Banner Slider */}
           <div>
-            <div className="lp-banner" style={{ background: banners[bannerSlide].bg }}>
-              <div style={{ flex: 1 }}>
+            <div className="lp-banner" style={{
+              background: banners[bannerSlide].imgUrl ? `url(${banners[bannerSlide].imgUrl})` : banners[bannerSlide].bg,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}>
+              {banners[bannerSlide].imgUrl && <div className="lp-banner-overlay" />}
+              <div className="lp-banner-content">
                 <div className="lp-banner-text-title">{banners[bannerSlide].title}</div>
                 <div className="lp-banner-text-sub">{banners[bannerSlide].sub}</div>
               </div>
-              <span className="lp-banner-icon">{banners[bannerSlide].icon}</span>
               <button className="lp-banner-arrow" onClick={() => setBannerSlide(s => (s + 1) % banners.length)}>›</button>
             </div>
             <div className="lp-dots">
@@ -2532,6 +2546,67 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
   // Cetak Rapor
   if (menu === "cetak-rapor") {
+    const handleDownloadPDF = () => {
+      const el = document.getElementById("rapor-preview");
+      if (!el) { alert("Pilih siswa terlebih dahulu!"); return; }
+      if (typeof html2canvas === "undefined") { alert("Library belum siap, tunggu sebentar."); return; }
+
+      const btn = document.getElementById("btn-download-rapor");
+      if (btn) { btn.disabled = true; btn.innerText = "⟳ Memproses..."; }
+
+      html2canvas(el, {
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      }).then(canvas => {
+        const imgData  = canvas.toDataURL("image/jpeg", 0.98);
+        const imgW     = canvas.width;
+        const imgH     = canvas.height;
+
+        // A4 dalam px pada 96dpi: 794 x 1123
+        const a4W = 794, a4H = 1123;
+        const scale  = Math.min(a4W / (imgW / 3), a4H / (imgH / 3));
+        const finalW = (imgW / 3) * scale;
+        const finalH = (imgH / 3) * scale;
+
+        // Buat canvas A4 putih
+        const pdf = document.createElement("canvas");
+        pdf.width  = a4W;
+        pdf.height = a4H;
+        const ctx  = pdf.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, a4W, a4H);
+
+        const img = new Image();
+        img.onload = () => {
+          const x = (a4W - finalW) / 2;
+          const y = 20;
+          ctx.drawImage(img, x, y, finalW, finalH);
+
+          const s = data.students.find(s => s.id === formData.rapor_siswa);
+          const nm = (s?.nama || "siswa").replace(/ /g, "-");
+          const link = document.createElement("a");
+          link.download = `Rapor-${nm}-${formData.rapor_semester || "Sem1"}-${formData.rapor_tahun || "2025-2026"}.pdf`;
+
+          // Simpan sebagai PNG lalu rename ke .pdf (browser tetap bisa buka)
+          // Atau simpan sebagai JPEG dengan ekstensi .jpg
+          link.href = pdf.toDataURL("image/jpeg", 0.97);
+          link.download = link.download.replace(".pdf", ".jpg");
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          if (btn) { btn.disabled = false; btn.innerText = "⬇️ Download PDF Rapor"; }
+        };
+        img.src = imgData;
+      }).catch(err => {
+        alert("Gagal: " + err.message);
+        if (btn) { btn.disabled = false; btn.innerText = "⬇️ Download PDF Rapor"; }
+      });
+    };
+
     return (
       <div className="card">
         <div className="card-header"><div className="card-title">📄 Cetak Rapor Semester</div></div>
@@ -2566,31 +2641,92 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
               </select></div>
             </div>
           </div>
-          <button className="btn btn-primary" disabled={!formData.rapor_siswa} onClick={() => alert("📄 Fitur download PDF rapor akan segera tersedia")}><Icon.Download /> Download PDF Rapor</button>
+
+          <button id="btn-download-rapor" className="btn btn-primary" disabled={!formData.rapor_siswa} onClick={handleDownloadPDF} style={{ marginBottom:20 }}>
+            <Icon.Download /> ⬇️ Download Rapor (JPG)
+          </button>
+
           {formData.rapor_siswa && (() => {
             const s = data.students.find(s => s.id === formData.rapor_siswa);
             const grades = data.grades.filter(g => g.studentId === formData.rapor_siswa);
+            const att    = data.studentAttendance.filter(a => a.studentId === formData.rapor_siswa);
+            const hadirCount = att.filter(a => a.status === "Hadir").length;
             const avg = grades.length > 0 ? Math.round(grades.reduce((a, g) => a + g.skor, 0) / grades.length) : 0;
+            const predikat = v => v >= 90 ? "A" : v >= 80 ? "B" : v >= 70 ? "C" : v >= 60 ? "D" : "E";
+            const keterangan = v => v >= 90 ? "Sangat Baik" : v >= 80 ? "Baik" : v >= 70 ? "Cukup" : v >= 60 ? "Perlu Bimbingan" : "Kurang";
+
             return (
-              <div style={{ marginTop: 24, background: "#f8fafc", borderRadius: 12, padding: 20, border: "1px solid #e6e2dc" }}>
-                <div style={{ fontFamily: "Amiri, serif", fontSize: 18, fontWeight: 700, textAlign: "center", marginBottom: 16 }}>🕌 Rapor — Bunayya Islamic School</div>
-                <div className="grid grid-2" style={{ gap: 12, marginBottom: 16 }}>
-                  <div><span className="text-muted text-sm">Nama:</span><div style={{ fontWeight: 600 }}>{s?.nama}</div></div>
-                  <div><span className="text-muted text-sm">Kelas:</span><div style={{ fontWeight: 600 }}>{s?.class_name}</div></div>
-                  <div><span className="text-muted text-sm">Semester:</span><div style={{ fontWeight: 600 }}>{formData.rapor_semester || "Semester 1 (Ganjil)"}</div></div>
-                  <div><span className="text-muted text-sm">Tahun Ajaran:</span><div style={{ fontWeight: 600 }}>{formData.rapor_tahun || "2025/2026"}</div></div>
+              <div id="rapor-preview" style={{ background:"#fff", borderRadius:16, padding:28, border:"2px solid #e0e0e0", maxWidth:620, margin:"0 auto", fontFamily:"Arial,sans-serif" }}>
+                {/* Header Rapor */}
+                <div style={{ textAlign:"center", borderBottom:"3px double #1d7a5f", paddingBottom:16, marginBottom:20 }}>
+                  <div style={{ fontSize:28, marginBottom:4 }}>🕌</div>
+                  <div style={{ fontSize:20, fontWeight:800, color:"#1d7a5f", letterSpacing:.5 }}>BUNAYYA ISLAMIC SCHOOL</div>
+                  <div style={{ fontSize:12, color:"#666", marginTop:2 }}>Jl. Panaragan Jaya — Portal Pendidikan</div>
+                  <div style={{ marginTop:10, fontSize:15, fontWeight:700, color:"#333", background:"#f0fdf4", borderRadius:8, padding:"6px 16px", display:"inline-block" }}>
+                    RAPOR {(formData.rapor_semester || "Semester 1").toUpperCase()} — T.A {formData.rapor_tahun || "2025/2026"}
+                  </div>
                 </div>
-                <table>
-                  <thead><tr><th>Mata Pelajaran</th><th>Nilai</th><th>Predikat</th></tr></thead>
-                  <tbody>
-                    {data.subjects.map(subj => {
-                      const sg = grades.filter(g => g.mataPelajaran === subj.name);
-                      const val = sg.length > 0 ? Math.round(sg.reduce((a, g) => a + g.skor, 0) / sg.length) : "-";
-                      return <tr key={subj.id}><td>{subj.name}</td><td style={{ fontWeight: 700 }}>{val}</td><td>{val !== "-" ? val >= 90 ? "A" : val >= 80 ? "B" : val >= 70 ? "C" : "D" : "-"}</td></tr>;
-                    })}
-                    <tr style={{ background: "#d1fae5" }}><td style={{ fontWeight: 700 }}>Rata-rata</td><td style={{ fontWeight: 700 }}>{avg}</td><td style={{ fontWeight: 700 }}>{avg >= 90 ? "A" : avg >= 80 ? "B" : avg >= 70 ? "C" : "D"}</td></tr>
-                  </tbody>
-                </table>
+
+                {/* Info Siswa */}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20, background:"#f8fafc", borderRadius:10, padding:14 }}>
+                  <div><div style={{ fontSize:10, color:"#999", textTransform:"uppercase" }}>Nama Siswa</div><div style={{ fontWeight:700, fontSize:14 }}>{s?.nama}</div></div>
+                  <div><div style={{ fontSize:10, color:"#999", textTransform:"uppercase" }}>Kelas</div><div style={{ fontWeight:700, fontSize:14 }}>{s?.class_name}</div></div>
+                  <div><div style={{ fontSize:10, color:"#999", textTransform:"uppercase" }}>NIS</div><div style={{ fontWeight:700, fontSize:14 }}>{s?.nis || "-"}</div></div>
+                  <div><div style={{ fontSize:10, color:"#999", textTransform:"uppercase" }}>Kehadiran</div><div style={{ fontWeight:700, fontSize:14, color:"#1d7a5f" }}>{hadirCount}/{att.length} hari</div></div>
+                </div>
+
+                {/* Tabel Nilai */}
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontWeight:700, fontSize:13, marginBottom:8, color:"#333" }}>📊 Rekap Nilai Mata Pelajaran</div>
+                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                    <thead>
+                      <tr style={{ background:"#1d7a5f", color:"white" }}>
+                        <th style={{ padding:"8px 10px", textAlign:"left", borderRadius:"6px 0 0 0" }}>Mata Pelajaran</th>
+                        <th style={{ padding:"8px 10px", textAlign:"center" }}>Nilai</th>
+                        <th style={{ padding:"8px 10px", textAlign:"center" }}>Predikat</th>
+                        <th style={{ padding:"8px 10px", textAlign:"left", borderRadius:"0 6px 0 0" }}>Keterangan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.subjects.map((subj, i) => {
+                        const sg  = grades.filter(g => g.mataPelajaran === subj.name);
+                        const val = sg.length > 0 ? Math.round(sg.reduce((a, g) => a + g.skor, 0) / sg.length) : null;
+                        return (
+                          <tr key={subj.id} style={{ background: i%2===0 ? "#f8fafc" : "#fff" }}>
+                            <td style={{ padding:"7px 10px", fontWeight:500 }}>{subj.name}</td>
+                            <td style={{ padding:"7px 10px", textAlign:"center", fontWeight:700, color: val >= 80 ? "#1d7a5f" : val >= 70 ? "#d97706" : val ? "#dc2626" : "#aaa" }}>{val ?? "-"}</td>
+                            <td style={{ padding:"7px 10px", textAlign:"center", fontWeight:700 }}>{val ? predikat(val) : "-"}</td>
+                            <td style={{ padding:"7px 10px", color:"#555", fontSize:11 }}>{val ? keterangan(val) : "-"}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr style={{ background:"#d1fae5", fontWeight:700 }}>
+                        <td style={{ padding:"8px 10px" }}>RATA-RATA</td>
+                        <td style={{ padding:"8px 10px", textAlign:"center", color:"#065f46" }}>{avg}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"center" }}>{predikat(avg)}</td>
+                        <td style={{ padding:"8px 10px", color:"#065f46", fontSize:11 }}>{keterangan(avg)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* TTD */}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginTop:24, paddingTop:16, borderTop:"1px solid #e0e0e0" }}>
+                  <div style={{ textAlign:"center" }}>
+                    <div style={{ fontSize:11, color:"#666" }}>Orang Tua / Wali</div>
+                    <div style={{ height:60, borderBottom:"1px solid #ccc", marginTop:8, marginBottom:4 }}></div>
+                    <div style={{ fontSize:11, color:"#aaa" }}>( _________________ )</div>
+                  </div>
+                  <div style={{ textAlign:"center" }}>
+                    <div style={{ fontSize:11, color:"#666" }}>Kepala Sekolah</div>
+                    <div style={{ height:60, borderBottom:"1px solid #ccc", marginTop:8, marginBottom:4 }}></div>
+                    <div style={{ fontSize:11, color:"#aaa" }}>( Hasnal Labibah )</div>
+                  </div>
+                </div>
+
+                <div style={{ textAlign:"center", marginTop:16, fontSize:10, color:"#bbb" }}>
+                  Dicetak melalui Portal Pendidikan Bunayya Islamic School • {new Date().toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}
+                </div>
               </div>
             );
           })()}
@@ -2884,6 +3020,86 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             </button>
           </div>
         </div>
+
+        {/* ── Pengaturan Slide ── */}
+        {(() => {
+          const defaultSlides = [
+            { title: "Selamat Datang",     sub: "Portal Pendidikan Bunayya", bg: "linear-gradient(135deg,#1a8a5a,#27ae60)", imgUrl: null },
+            { title: "Pantau Perkembangan", sub: "Anak Anda setiap hari",    bg: "linear-gradient(135deg,#1565c0,#1e88e5)", imgUrl: null },
+            { title: "Generasi Qur'ani",   sub: "Berakhlak & Berprestasi",  bg: "linear-gradient(135deg,#6a1b9a,#9c27b0)", imgUrl: null },
+          ];
+          const slides = (loginConfig.slides && loginConfig.slides.length > 0) ? loginConfig.slides : defaultSlides;
+
+          const updateSlide = (idx, patch) => {
+            const next = slides.map((s, i) => i === idx ? { ...s, ...patch } : s);
+            saveLoginConfig({ slides: next });
+          };
+          const uploadImage = (idx, file) => {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = ev => updateSlide(idx, { imgUrl: ev.target.result });
+            reader.readAsDataURL(file);
+          };
+
+          return (
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">🖼️ Pengaturan Slide Banner</div>
+              </div>
+              <div className="card-body" style={{ display:"flex", flexDirection:"column", gap:20 }}>
+                {slides.map((slide, idx) => (
+                  <div key={idx} style={{ border:"1.5px solid #e8e8e8", borderRadius:14, overflow:"hidden" }}>
+                    {/* Preview mini */}
+                    <div style={{
+                      height:80, background: slide.imgUrl ? `url(${slide.imgUrl}) center/cover` : slide.bg,
+                      display:"flex", alignItems:"center", padding:"0 16px", position:"relative"
+                    }}>
+                      {slide.imgUrl && <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,.4)", borderRadius:0 }} />}
+                      <div style={{ position:"relative", zIndex:1 }}>
+                        <div style={{ fontWeight:700, fontSize:14, color:"white" }}>{slide.title || "Judul Slide"}</div>
+                        <div style={{ fontSize:11, color:"rgba(255,255,255,.8)" }}>{slide.sub || "Sub judul"}</div>
+                      </div>
+                      <div style={{ position:"absolute", top:8, right:8, fontSize:11, background:"rgba(0,0,0,.4)", color:"white", padding:"2px 8px", borderRadius:99 }}>Slide {idx+1}</div>
+                    </div>
+                    {/* Form */}
+                    <div style={{ padding:14, display:"flex", flexDirection:"column", gap:10 }}>
+                      <div className="grid grid-2" style={{ gap:10 }}>
+                        <div className="form-group" style={{ margin:0 }}>
+                          <label className="label" style={{ fontSize:11 }}>Judul</label>
+                          <input className="input" style={{ fontSize:12 }} value={slide.title || ""}
+                            onChange={e => updateSlide(idx, { title: e.target.value })} />
+                        </div>
+                        <div className="form-group" style={{ margin:0 }}>
+                          <label className="label" style={{ fontSize:11 }}>Sub Judul</label>
+                          <input className="input" style={{ fontSize:12 }} value={slide.sub || ""}
+                            onChange={e => updateSlide(idx, { sub: e.target.value })} />
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <label style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 14px", background:"#eff6ff", border:"1.5px dashed #2563a8", borderRadius:8, cursor:"pointer", fontSize:12, fontWeight:600, color:"#2563a8" }}>
+                          📁 Upload Gambar
+                          <input type="file" accept="image/*" style={{ display:"none" }}
+                            onChange={e => uploadImage(idx, e.target.files?.[0])} />
+                        </label>
+                        {slide.imgUrl && (
+                          <button onClick={() => updateSlide(idx, { imgUrl: null })}
+                            style={{ padding:"6px 12px", fontSize:11, background:"#fee2e2", color:"#dc2626", border:"none", borderRadius:8, cursor:"pointer", fontWeight:600 }}>
+                            🗑️ Hapus Gambar
+                          </button>
+                        )}
+                        {slide.imgUrl
+                          ? <span style={{ fontSize:11, color:"#27ae60", fontWeight:600 }}>✅ Gambar terpasang</span>
+                          : <span style={{ fontSize:11, color:"#aaa" }}>Menggunakan warna gradient</span>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ fontSize:11, color:"#aaa", textAlign:"center" }}>💡 Perubahan langsung tersimpan otomatis</div>
+              </div>
+            </div>
+          );
+        })()}
 
       </div>
     );
