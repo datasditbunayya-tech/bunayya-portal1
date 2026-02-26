@@ -7,6 +7,7 @@
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="document.getElementById('app-loading').innerHTML='<div style=padding:40px;text-align:center><h3 style=color:#991b1b>Gagal memuat halaman</h3><p>Periksa koneksi internet lalu refresh.</p><button onclick=location.reload() style=padding:10px 20px;background:#065f46;color:white;border:none;border-radius:8px;cursor:pointer>Refresh</button></div>'"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <!-- Firebase SDK (compat version - works with Babel) -->
   <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-firestore-compat.min.js"></script>
@@ -1195,6 +1196,21 @@ function App() {
   const [loginForm, setLoginForm] = useState({ username: "", password: "", teacherId: "", studentClass: "", studentId: "" });
   const [loginError, setLoginError] = useState("");
 
+  // Login page config (tulisan & logo)
+  const [loginConfig, setLoginConfig] = React.useState(() => {
+    try {
+      const s = localStorage.getItem("bunayya_login_config");
+      return s ? JSON.parse(s) : {};
+    } catch(e) { return {}; }
+  });
+  const saveLoginConfig = (patch) => {
+    setLoginConfig(prev => {
+      const next = { ...prev, ...patch };
+      try { localStorage.setItem("bunayya_login_config", JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
+  };
+
   // Global form / UI state
   const [formData, setFormData] = useState({});
   const [selectedKelas, setSelectedKelas] = useState("Semua");
@@ -1494,7 +1510,7 @@ function App() {
   };
 
   // ── RENDER ───────────────────────────────────────────────────────────────────
-  if (!user) return <LoginPage loginRole={loginRole} setLoginRole={setLoginRole} loginForm={loginForm} setLoginForm={setLoginForm} loginError={loginError} handleLogin={handleLogin} data={data} />;
+  if (!user) return <LoginPage loginRole={loginRole} setLoginRole={setLoginRole} loginForm={loginForm} setLoginForm={setLoginForm} loginError={loginError} handleLogin={handleLogin} data={data} loginConfig={loginConfig} />;
 
   // ── Custom delete confirm dialog ─────────────────────────────────────────
   const DeleteModal = () => deleteConfirm ? (
@@ -1537,13 +1553,14 @@ function App() {
   ];
 
   const waliMenus = [
-    { id: "dashboard", label: "🏠 Dashboard" },
-    { id: "absensi", label: "📋 Absensi" },
-    { id: "harian", label: "📝 Harian" },
-    { id: "nilai", label: "📊 Nilai" },
-    { id: "kegiatan", label: "🎯 Kegiatan" },
-    { id: "target", label: "🏆 Target" },
-    { id: "hafalan", label: "📖 Hafalan" },
+    { id: "dashboard",    label: "🏠 Dashboard" },
+    { id: "notifikasi",   label: "🔔 Notifikasi" },
+    { id: "absensi",      label: "📋 Absensi" },
+    { id: "harian",       label: "📝 Harian" },
+    { id: "nilai",        label: "📊 Nilai" },
+    { id: "kegiatan",     label: "🎯 Kegiatan" },
+    { id: "target",       label: "🏆 Target" },
+    { id: "hafalan",      label: "📖 Hafalan" },
   ];
 
   const activeMenus = portal === "guru" ? guruMenus : portal === "siswa" ? siswaMenus : waliMenus;
@@ -1657,7 +1674,7 @@ function App() {
       {/* Content */}
       <div className="content">
         {portal === "guru" && (
-          <PortalGuru menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} />
+          <PortalGuru menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} />
         )}
         {portal === "siswa" && (
           <PortalSiswa menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} syncCollection={syncCollection} />
@@ -1680,13 +1697,19 @@ function App() {
 }
 
 // ─── LOGIN PAGE ───────────────────────────────────────────────────────────────
-function LoginPage({ loginRole, setLoginRole, loginForm, setLoginForm, loginError, handleLogin, data }) {
+function LoginPage({ loginRole, setLoginRole, loginForm, setLoginForm, loginError, handleLogin, data, loginConfig = {} }) {
   const [bannerSlide, setBannerSlide] = useState(0);
   const banners = [
     { title: "Selamat Datang", sub: "Portal Pendidikan Bunayya", bg: "linear-gradient(135deg,#1a8a5a,#27ae60)", icon: "🕌" },
     { title: "Pantau Perkembangan", sub: "Anak Anda setiap hari", bg: "linear-gradient(135deg,#1565c0,#1e88e5)", icon: "📊" },
     { title: "Generasi Qur'ani", sub: "Berakhlak & Berprestasi", bg: "linear-gradient(135deg,#6a1b9a,#9c27b0)", icon: "📖" },
   ];
+
+  // Gunakan loginConfig jika ada, fallback ke default
+  const namaSekolah  = loginConfig.namaSekolah  || "Bunayya Islamic School";
+  const tagline      = loginConfig.tagline       || "Menuju Generasi Qur'ani";
+  const eduTag       = loginConfig.eduTag        || "EDUCATION PORTAL";
+  const logoUrl      = loginConfig.logoUrl       || null;
 
   // auto-slide
   useState(() => {
@@ -1709,10 +1732,15 @@ function LoginPage({ loginRole, setLoginRole, loginForm, setLoginForm, loginErro
       <div className="lp-phone">
         {/* ── Header ── */}
         <div className="lp-header">
-          <div className="lp-tag">EDUCATION PORTAL</div>
-          <div className="lp-school-name">Bunayya Islamic School</div>
-          <div className="lp-school-sub">Menuju Generasi Qur'ani</div>
-          <div className="lp-header-icon">🏫</div>
+          <div className="lp-tag">{eduTag}</div>
+          <div className="lp-school-name">{namaSekolah}</div>
+          <div className="lp-school-sub">{tagline}</div>
+          <div className="lp-header-icon">
+            {logoUrl
+              ? <img src={logoUrl} alt="Logo" style={{ width:72, height:72, borderRadius:"50%", objectFit:"cover", border:"3px solid rgba(255,255,255,.4)" }} />
+              : <span>🏫</span>
+            }
+          </div>
         </div>
 
         {/* ── Body ── */}
@@ -1840,7 +1868,7 @@ function LoginPage({ loginRole, setLoginRole, loginForm, setLoginForm, loginErro
 }
 
 // ─── PORTAL GURU ─────────────────────────────────────────────────────────────
-function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas, setSelectedKelas, searchQuery, setSearchQuery, user, canAccess, saveAbsensiSiswa, saveAbsensiGuru, saveJurnal, saveNilaiKelas, deleteItem }) {
+function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas, setSelectedKelas, searchQuery, setSearchQuery, user, canAccess, saveAbsensiSiswa, saveAbsensiGuru, saveJurnal, saveNilaiKelas, deleteItem, loginConfig = {}, saveLoginConfig }) {
 
   const todayStr = today();
 
@@ -2772,6 +2800,91 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             <div className="form-group"><label className="label">Deskripsi</label><textarea className="textarea" rows={3} placeholder="Keterangan pengumuman..." value={formData.newAnnDeskripsi || ""} onChange={e => patchForm({ newAnnDeskripsi: e.target.value })} /></div>
           </Dialog>
         )}
+
+        {/* ── Pengaturan Tampilan Login ── */}
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">🎨 Pengaturan Tampilan Login</div>
+          </div>
+          <div className="card-body" style={{ display:"flex", flexDirection:"column", gap:16 }}>
+
+            {/* Preview */}
+            <div style={{ background:"linear-gradient(135deg,#1a8a5a,#27ae60)", borderRadius:16, padding:"24px 20px", textAlign:"center", color:"white" }}>
+              <div style={{ marginBottom:10 }}>
+                {(loginConfig.logoUrl)
+                  ? <img src={loginConfig.logoUrl} alt="Logo" style={{ width:72, height:72, borderRadius:"50%", objectFit:"cover", border:"3px solid rgba(255,255,255,.4)", display:"inline-block" }} />
+                  : <div style={{ fontSize:48 }}>🏫</div>
+                }
+              </div>
+              <div style={{ fontSize:11, opacity:.7, letterSpacing:2, marginBottom:2 }}>{loginConfig.eduTag || "EDUCATION PORTAL"}</div>
+              <div style={{ fontSize:22, fontWeight:700, fontFamily:"Amiri,serif", marginBottom:2 }}>{loginConfig.namaSekolah || "Bunayya Islamic School"}</div>
+              <div style={{ fontSize:13, opacity:.75 }}>{loginConfig.tagline || "Menuju Generasi Qur'ani"}</div>
+            </div>
+
+            {/* Upload Logo */}
+            <div className="form-group" style={{ margin:0 }}>
+              <label className="label">📷 Logo Sekolah</label>
+              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                {loginConfig.logoUrl && (
+                  <img src={loginConfig.logoUrl} alt="Logo" style={{ width:52, height:52, borderRadius:"50%", objectFit:"cover", border:"2px solid #e0e0e0" }} />
+                )}
+                <label style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 16px", background:"#f0fdf4", border:"1.5px dashed #27ae60", borderRadius:10, cursor:"pointer", fontSize:13, fontWeight:600, color:"#27ae60" }}>
+                  📁 Pilih Foto
+                  <input type="file" accept="image/*" style={{ display:"none" }} onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => saveLoginConfig({ logoUrl: ev.target.result });
+                    reader.readAsDataURL(file);
+                  }} />
+                </label>
+                {loginConfig.logoUrl && (
+                  <button onClick={() => saveLoginConfig({ logoUrl: null })} style={{ padding:"6px 12px", fontSize:12, background:"#fee2e2", color:"#dc2626", border:"none", borderRadius:8, cursor:"pointer", fontWeight:600 }}>🗑️ Hapus</button>
+                )}
+              </div>
+            </div>
+
+            {/* Nama Sekolah */}
+            <div className="form-group" style={{ margin:0 }}>
+              <label className="label">🏫 Nama Sekolah</label>
+              <input className="input" placeholder="Bunayya Islamic School"
+                value={formData.cfg_namaSekolah ?? (loginConfig.namaSekolah || "")}
+                onChange={e => patchForm({ cfg_namaSekolah: e.target.value })} />
+            </div>
+
+            {/* Tagline */}
+            <div className="form-group" style={{ margin:0 }}>
+              <label className="label">✨ Tagline / Slogan</label>
+              <input className="input" placeholder="Menuju Generasi Qur'ani"
+                value={formData.cfg_tagline ?? (loginConfig.tagline || "")}
+                onChange={e => patchForm({ cfg_tagline: e.target.value })} />
+            </div>
+
+            {/* Education Tag */}
+            <div className="form-group" style={{ margin:0 }}>
+              <label className="label">🏷️ Label Atas (Education Tag)</label>
+              <input className="input" placeholder="EDUCATION PORTAL"
+                value={formData.cfg_eduTag ?? (loginConfig.eduTag || "")}
+                onChange={e => patchForm({ cfg_eduTag: e.target.value })} />
+            </div>
+
+            <button
+              onClick={() => {
+                saveLoginConfig({
+                  namaSekolah: formData.cfg_namaSekolah ?? loginConfig.namaSekolah ?? "Bunayya Islamic School",
+                  tagline:     formData.cfg_tagline     ?? loginConfig.tagline     ?? "Menuju Generasi Qur'ani",
+                  eduTag:      formData.cfg_eduTag      ?? loginConfig.eduTag      ?? "EDUCATION PORTAL",
+                });
+                patchForm({ cfg_namaSekolah: undefined, cfg_tagline: undefined, cfg_eduTag: undefined });
+                alert("✅ Pengaturan tampilan login berhasil disimpan!");
+              }}
+              className="btn btn-primary"
+            >
+              💾 Simpan Pengaturan
+            </button>
+          </div>
+        </div>
+
       </div>
     );
   }
@@ -3568,6 +3681,56 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       {/* Dashboard */}
       {menu === "dashboard" && (
         <div>
+          {/* Tombol Download */}
+          {(() => {
+            const [downloading, setDownloading] = React.useState(false);
+            const handleDownload = () => {
+              const el = document.getElementById("wali-dashboard-capture");
+              if (!el) { alert("Konten belum siap, coba lagi."); return; }
+              if (typeof html2canvas === "undefined") { alert("Library belum siap, tunggu sebentar lalu coba lagi."); return; }
+              setDownloading(true);
+              html2canvas(el, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: "#ffffff",
+                logging: false,
+                onclone: (doc) => {
+                  // Pastikan semua elemen visible di clone
+                  doc.getElementById("wali-dashboard-capture").style.display = "block";
+                }
+              }).then(canvas => {
+                const link = document.createElement("a");
+                link.download = `rekap-${(studentData?.nama||"siswa").replace(/ /g,"-")}-${new Date().toISOString().slice(0,10)}.jpg`;
+                link.href = canvas.toDataURL("image/jpeg", 0.95);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                setDownloading(false);
+              }).catch(err => {
+                console.error("Download error:", err);
+                alert("Gagal download: " + err.message);
+                setDownloading(false);
+              });
+            };
+            return (
+              <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:12 }}>
+                <button onClick={handleDownload} disabled={downloading}
+                  style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 18px", fontSize:13, fontWeight:700, background: downloading ? "#aaa" : "#1d7a5f", color:"white", border:"none", borderRadius:10, cursor: downloading ? "not-allowed" : "pointer", transition:"all .2s" }}>
+                  {downloading ? <><span style={{ display:"inline-block", animation:"spin 1s linear infinite" }}>⟳</span> Memproses...</> : <>⬇️ Download JPG</>}
+                </button>
+              </div>
+            );
+          })()}
+          <div id="wali-dashboard-capture" style={{ padding:8, background:"#f8fafc", borderRadius:12 }}>
+          {/* Info siswa di capture */}
+          {studentData && (
+            <div style={{ background:"linear-gradient(135deg,#1d7a5f,#065f46)", borderRadius:16, padding:"16px 20px", marginBottom:16, color:"white" }}>
+              <div style={{ fontSize:12, opacity:.75 }}>{studentData.class_name}</div>
+              <div style={{ fontSize:20, fontWeight:700, fontFamily:"Amiri,serif" }}>{studentData.nama}</div>
+              <div style={{ fontSize:11, opacity:.6, marginTop:4 }}>Rekap per {new Date().toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}</div>
+            </div>
+          )}
           <div className="grid grid-5 mb-4" style={{ gap: 12 }}>
             {[
               { icon: "✅", label: "Kehadiran", val: `${attPct}%` },
@@ -3681,6 +3844,65 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
               </div>
             </div>
           </div>
+          </div>{/* end wali-dashboard-capture */}
+        </div>
+      )}
+
+      {menu === "notifikasi" && (
+        <div>
+          {/* Pengumuman Sekolah */}
+          <div className="card mb-4">
+            <div className="card-header">
+              <div className="card-title">📢 Pengumuman Sekolah</div>
+            </div>
+            <div className="card-body">
+              {data.announcements.length === 0
+                ? <div className="empty-state">Belum ada pengumuman</div>
+                : data.announcements.map((a, i) => (
+                  <div key={a.id || i} style={{ display:"flex", gap:14, alignItems:"flex-start", padding:"14px 0", borderBottom: i < data.announcements.length-1 ? "1px solid #f0f0f0" : "none" }}>
+                    <div style={{ width:44, height:44, borderRadius:12, background:"#eff6ff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>{a.icon || "📢"}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>{a.judul}</div>
+                      <div style={{ fontSize:13, color:"#666", lineHeight:1.5 }}>{a.deskripsi}</div>
+                      {a.tanggal && <div style={{ fontSize:11, color:"#aaa", marginTop:4 }}>📅 {a.tanggal}</div>}
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+
+          {/* Aktivitas terbaru siswa */}
+          {studentData && (
+            <div className="card mb-4">
+              <div className="card-header">
+                <div className="card-title">🔔 Aktivitas Terbaru {studentData.nama}</div>
+              </div>
+              <div className="card-body">
+                {(() => {
+                  const items = [
+                    ...studentAtt.map(a => ({ tanggal: a.tanggal, icon: a.status === "Hadir" ? "✅" : a.status === "Sakit" ? "🤒" : a.status === "Izin" ? "📄" : "❌", teks: `Absensi: ${a.status}`, bg:"#ecfdf5", warna:"#065f46" })),
+                    ...studentGrades.map(g => ({ tanggal: g.tanggal, icon: "📊", teks: `Nilai ${g.mataPelajaran}: ${g.skor}`, bg:"#ede9fe", warna:"#5b21b6" })),
+                    ...studentReports.map(r => ({ tanggal: r.tanggal, icon: "📝", teks: `Laporan Harian: ${r.bahasan || r.mataPelajaran || ""}`, bg:"#fef3c7", warna:"#92400e" })),
+                    ...studentActs.map(a => ({ tanggal: a.tanggal, icon: "🎯", teks: `Kegiatan: ${a.kategori || a.mataPelajaran || ""}`, bg:"#eff6ff", warna:"#1e40af" })),
+                    ...studentTargets.map(t => ({ tanggal: t.tanggal, icon: "🏆", teks: `Target: ${t.namaTarget || t.catatan || ""}`, bg:"#fee2e2", warna:"#991b1b" })),
+                    ...studentZiyadah.map(z => ({ tanggal: z.tanggal, icon: "📖", teks: `Hafalan: ${z.surah || ""} ${z.ayat ? "ayat "+z.ayat : ""}`, bg:"#d1fae5", warna:"#065f46" })),
+                  ].sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || "")).slice(0, 20);
+
+                  if (items.length === 0) return <div className="empty-state">Belum ada aktivitas tercatat</div>;
+                  return items.map((item, i) => (
+                    <div key={i} style={{ display:"flex", gap:12, alignItems:"flex-start", padding:"10px 0", borderBottom: i < items.length-1 ? "1px solid #f5f5f5" : "none" }}>
+                      <div style={{ width:36, height:36, borderRadius:10, background:item.bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>{item.icon}</div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:item.warna }}>{item.teks}</div>
+                        <div style={{ fontSize:11, color:"#aaa", marginTop:2 }}>📅 {item.tanggal || "-"}</div>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
