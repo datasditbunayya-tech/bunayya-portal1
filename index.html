@@ -8,36 +8,34 @@
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <!-- Firebase SDK (compat version - works with Babel) -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-firestore-compat.min.js"></script>
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyCGs0oOMaaZGe63pRcz_ljdIHHBBzK53S0",
-      authDomain: "bunayya-portal.firebaseapp.com",
-      projectId: "bunayya-portal",
-      storageBucket: "bunayya-portal.firebasestorage.app",
-      messagingSenderId: "626345727001",
-      appId: "1:626345727001:web:f70e99bab5ecef12938688"
-    };
-    try {
-      const fbApp = firebase.initializeApp(firebaseConfig);
-      const db = firebase.firestore();
-      window.__firebase = {
-        db,
-        collection: (d, c) => d.collection(c),
-        onSnapshot: (ref, cb, err) => ref.onSnapshot(cb, err),
-        doc: (d, c, id) => d.collection(c).doc(id),
-        setDoc: (ref, data) => ref.set(data),
-        deleteDoc: (ref) => ref.delete(),
-        getDocs: (ref) => ref.get(),
-        writeBatch: (d) => d.batch(),
-        ready: true
+    window.__firebase = { ready: false };
+    function initFirebase() {
+      if (typeof firebase === "undefined") {
+        setTimeout(initFirebase, 300);
+        return;
+      }
+      const firebaseConfig = {
+        apiKey: "AIzaSyCGs0oOMaaZGe63pRcz_ljdIHHBBzK53S0",
+        authDomain: "bunayya-portal.firebaseapp.com",
+        projectId: "bunayya-portal",
+        storageBucket: "bunayya-portal.firebasestorage.app",
+        messagingSenderId: "626345727001",
+        appId: "1:626345727001:web:f70e99bab5ecef12938688"
       };
-      console.log("✅ Firebase Firestore terhubung!");
-    } catch(e) {
-      console.error("Firebase init error:", e);
-      window.__firebase = { ready: false };
+      try {
+        const fbApp = firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        window.__firebase = { db, ready: true };
+        console.log("✅ Firebase Firestore terhubung!");
+      } catch(e) {
+        console.error("Firebase init error:", e);
+        window.__firebase = { ready: false };
+      }
     }
+    initFirebase();
   </script>
   <style>
 
@@ -1554,43 +1552,42 @@ function App() {
             <div className="header-user-role">{user.role}</div>
           </div>
           {(user?.role === "admin" || user?.role === "teacher") && (
-            <button
-              title="Sinkronkan semua data ke Firebase Firestore"
-              onClick={syncAllToSheets}
-              disabled={syncStatus === "syncing"}
-              style={{
-                display:"flex", alignItems:"center", gap:5,
-                padding:"6px 12px", fontSize:12, fontWeight:700,
-                border:"none", borderRadius:10, cursor:"pointer",
-                background: syncStatus === "syncing" ? "#1d4ed8" : syncStatus === "success" ? "#065f46" : "rgba(255,255,255,.2)",
-                color:"white", whiteSpace:"nowrap",
-                transition:"all .2s"
-              }}
-            >
-              {syncStatus === "syncing"
-                ? <><span style={{display:"inline-block", animation:"spin 1s linear infinite"}}>⟳</span> Sinkron...</>
-                : <><span>🔥</span> Firebase</>
-              }
-            </button>
-          )}
-          {(user?.role === "admin" || user?.role === "teacher") && (
-            <button
-              title="Muat ulang data dari Firebase"
-              onClick={loadFromSheets}
-              disabled={syncStatus === "syncing"}
-              style={{
-                display:"flex", alignItems:"center", gap:5,
-                padding:"6px 12px", fontSize:12, fontWeight:700,
-                border:"none", borderRadius:10, cursor:"pointer",
-                background:"rgba(255,255,255,.2)",
-                color:"white", whiteSpace:"nowrap", transition:"all .2s"
-              }}
-            >
-              <span>📥</span> Muat
-            </button>
+            <div style={{ display:"flex", flexDirection:"column", gap:3, alignItems:"flex-start" }}>
+              <button
+                title="Sinkronkan semua data ke Firebase Firestore"
+                onClick={syncAllToSheets}
+                disabled={syncStatus === "syncing"}
+                style={{
+                  display:"flex", alignItems:"center", gap:3,
+                  padding:"3px 8px", fontSize:10, fontWeight:700,
+                  border:"none", borderRadius:7, cursor:"pointer",
+                  background: syncStatus === "syncing" ? "#1d4ed8" : syncStatus === "success" ? "#065f46" : "rgba(255,255,255,.2)",
+                  color:"white", whiteSpace:"nowrap", transition:"all .2s"
+                }}
+              >
+                {syncStatus === "syncing"
+                  ? <><span style={{display:"inline-block", animation:"spin 1s linear infinite"}}>⟳</span> Sinkron...</>
+                  : <><span>🔥</span> Firebase</>
+                }
+              </button>
+              <button
+                title="Muat ulang data dari Firebase"
+                onClick={loadFromSheets}
+                disabled={syncStatus === "syncing"}
+                style={{
+                  display:"flex", alignItems:"center", gap:3,
+                  padding:"3px 8px", fontSize:10, fontWeight:700,
+                  border:"none", borderRadius:7, cursor:"pointer",
+                  background:"rgba(255,255,255,.2)",
+                  color:"white", whiteSpace:"nowrap", transition:"all .2s"
+                }}
+              >
+                <span>📥</span> Muat
+              </button>
+            </div>
           )}
           {lastSync && (
-            <div style={{fontSize:10, color:"rgba(255,255,255,.6)", textAlign:"center", whiteSpace:"nowrap"}}>
+            <div style={{fontSize:9, color:"rgba(255,255,255,.6)", textAlign:"left", whiteSpace:"nowrap", lineHeight:1.4}}>
               🔥 Realtime<br/>{lastSync.split(",")[1]?.trim() || lastSync}
             </div>
           )}
@@ -1820,148 +1817,81 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
   if (menu === "dashboard") {
 
     // ── BarChart vertikal SVG ─────────────────────────────────────────────
-    const BarChart = ({ items, color = "#1d7a5f", maxOverride, heightPx = 60 }) => {
-      const W = 48, GAP = 12, H = heightPx, PAD_LEFT = 36, PAD_BOT = 44, PAD_TOP = 16;
-      const rawMax = maxOverride || Math.max(...items.map(i => i.val), 1);
-
-      // Hitung step garis Y yang rapi sesuai data
-      const niceStep = (max) => {
-        if (max <= 5)  return 1;
-        if (max <= 10) return 2;
-        if (max <= 20) return 5;
-        if (max <= 50) return 10;
-        if (max <= 100) return 20;
-        return Math.ceil(max / 5 / 10) * 10;
-      };
-      const step = niceStep(rawMax);
-      const maxVal = Math.ceil(rawMax / step) * step; // bulatkan ke kelipatan step
-      // Buat array garis Y: 0, step, 2*step, ... maxVal
-      const yTicks = [];
-      for (let v = 0; v <= maxVal; v += step) yTicks.push(v);
-
-      const totalW = items.length * W + (items.length - 1) * GAP + PAD_LEFT + 24;
-      const colorAlpha = color + "22";
-
-      const shortLabel = (lbl) => {
-        return lbl.replace("Kelas ", "Kls ").replace("Ustadz ", "Ust. ").replace("Ustadzah ", "Ust. ");
-      };
+    const BarChart = ({ items, color = "#1d7a5f", maxOverride }) => {
+      const W = 52, GAP = 10, H = 130, PAD_LEFT = 32, PAD_BOT = 72, PAD_TOP = 16;
+      const maxVal = maxOverride || Math.max(...items.map(i => i.val), 1);
+      const totalW = items.length * W + (items.length - 1) * GAP + PAD_LEFT + 16;
+      const yLines = [0, 0.25, 0.5, 0.75, 1];
 
       if (items.length === 0) return <div className="empty-state">Belum ada data</div>;
-      return (
-        <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)} preserveAspectRatio="xMidYMin meet" style={{ overflow:"visible", display:"block", maxWidth:"100%" }}>
-          {/* Background stripes selang-seling */}
-          {yTicks.slice(1).map((v, fi) => {
-            const y     = PAD_TOP + H - (v / maxVal) * H;
-            const nextY = PAD_TOP + H - ((v - step) / maxVal) * H;
-            return fi % 2 === 0
-              ? <rect key={v} x={PAD_LEFT} y={y} width={totalW - PAD_LEFT} height={nextY - y} fill={colorAlpha} />
-              : null;
-          })}
 
-          {/* Garis sumbu Y — bertambah otomatis sesuai data */}
-          {yTicks.map(v => {
-            const y = PAD_TOP + H - (v / maxVal) * H;
+      return (
+        <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)}
+          style={{ overflow:"visible", display:"block" }}>
+
+          {/* Grid lines horizontal */}
+          {yLines.map(frac => {
+            const y = PAD_TOP + H - frac * H;
             return (
-              <g key={v}>
-                <line x1={PAD_LEFT} y1={y} x2={totalW} y2={y}
-                  stroke={v === 0 ? "#bbb" : "#e0e0e0"}
-                  strokeWidth={v === 0 ? 2 : 1}
-                  strokeDasharray={v === 0 ? "0" : "5 4"} />
-                <text x={PAD_LEFT - 6} y={y + 4} textAnchor="end" fontSize="9" fill="#aaa" fontWeight="600">{v}</text>
+              <g key={frac}>
+                <line x1={PAD_LEFT} y1={y} x2={totalW} y2={y} stroke="#e8e8e8" strokeWidth="1" strokeDasharray={frac===0?"0":"4 3"} />
+                <text x={PAD_LEFT-4} y={y+4} textAnchor="end" fontSize="9" fill="#999">{Math.round(frac*maxVal)}</text>
               </g>
             );
           })}
 
           {/* Bars */}
           {items.map((item, i) => {
-            const x    = PAD_LEFT + i * (W + GAP);
-            const barH = maxVal > 0 ? Math.max((item.val / maxVal) * H, item.val > 0 ? 6 : 2) : 2;
+            const x = PAD_LEFT + i * (W + GAP);
+            const barH = maxVal > 0 ? Math.max((item.val/maxVal)*H, item.val>0?4:0) : 0;
             const barY = PAD_TOP + H - barH;
-            const label = shortLabel(item.lbl);
-            const words = label.split(" ");
             return (
               <g key={i}>
-                <rect x={x + 3} y={barY + 3} width={W} height={barH} rx="6" fill="rgba(0,0,0,.07)" />
-                <rect x={x} y={barY} width={W} height={barH} rx="6" fill={color} />
-                <rect x={x + 4} y={barY + 4} width={W - 8} height={Math.min(barH - 8, 18)} rx="4" fill="rgba(255,255,255,.18)" />
+                <rect x={x+3} y={barY+3} width={W} height={barH} rx="5" fill="rgba(0,0,0,.06)" />
+                <rect x={x} y={barY} width={W} height={barH} rx="5" fill={color} />
                 {item.val > 0 && (
-                  <text x={x + W/2} y={barY - 6} textAnchor="middle" fontSize="11" fontWeight="800" fill={color}>{item.val}</text>
+                  <text x={x+W/2} y={barY-6} textAnchor="middle" fontSize="14" fontWeight="900" fill={color}>{item.val}</text>
                 )}
-                {words.map((word, wi) => (
-                  <text key={wi} x={x + W/2} y={PAD_TOP + H + 14 + wi * 12} textAnchor="middle" fontSize="10" fill="#555" fontWeight="600">{word}</text>
-                ))}
+                {/* Label miring -45 derajat */}
+                <text x={x+W/2} y={PAD_TOP+H+8} textAnchor="end" fontSize="14" fontWeight="900" fill="#333"
+                  transform={"rotate(-45,"+(x+W/2)+","+(PAD_TOP+H+8)+")"}>
+                  {item.lbl}
+                </text>
               </g>
             );
           })}
 
-          {/* Y-axis vertical line */}
-          <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={PAD_TOP + H} stroke="#ccc" strokeWidth="1.5" />
+          {/* Baseline */}
+          <line x1={PAD_LEFT} y1={PAD_TOP+H} x2={totalW} y2={PAD_TOP+H} stroke="#ccc" strokeWidth="1.5" />
         </svg>
       );
     };
 
-    // ── Filter tanggal ───────────────────────────────────────────────────
-    const dashStart = formData.dash_start || today();
-    const dashEnd   = formData.dash_end   || today();
-    const inRange = (tanggal) => {
-      if (!tanggal) return true;
-      return tanggal >= dashStart && tanggal <= dashEnd;
-    };
-
-    // ── Data chart: semua kelas & semua guru selalu tampil ───────────────────
+    // ── Data chart ───────────────────────────────────────────────────────
     const kelasList = KELAS_LIST.filter(k => k !== "Semua");
+    const absSiswaPerKelas  = kelasList.map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k).length }));
+    const absGuruPerNama    = data.teachers.map(t => ({ lbl: t.nama, val: data.teacherAttendance.filter(a => a.teacherId === t.id).length }));
+    const jurnalPerGuru     = data.teachers.map(t => ({ lbl: t.nama, val: data.journals.filter(j => j.teacherId === t.id).length }));
+    const harianPerKelas    = kelasList.map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k).length }));
+    const nilaiPerKelas     = kelasList.map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k).length }));
+    const kegiatanPerKelas  = kelasList.map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k).length }));
+    const targetPerKelas    = kelasList.map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k).length }));
+    const ziyadahPerKelas   = kelasList.map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k).length }));
 
-    // Absensi Siswa — semua kelas tampil
-    const absSiswaPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
-
-    // Absensi Guru — SEMUA guru tampil meskipun 0
-    const absGuruPerNama = data.teachers.map(t => ({
-      lbl: t.nama,
-      val: data.teacherAttendance.filter(a => a.teacherId === t.id && inRange(a.tanggal)).length
-    }));
-
-    // Jurnal — SEMUA guru tampil meskipun 0
-    const jurnalPerGuru = data.teachers.map(t => ({
-      lbl: t.nama,
-      val: data.journals.filter(j => j.teacherId === t.id && inRange(j.tanggal)).length
-    }));
-
-    // Hitung maxVal bersama untuk absSiswa, absGuru, jurnal agar tinggi sumbu sama
-    const sharedMax = Math.max(
-      ...absSiswaPerKelas.map(x => x.val),
-      ...absGuruPerNama.map(x => x.val),
-      ...jurnalPerGuru.map(x => x.val),
-      1
+    const globalMax = Math.max(
+      ...absSiswaPerKelas.map(x=>x.val), ...absGuruPerNama.map(x=>x.val),
+      ...jurnalPerGuru.map(x=>x.val), ...harianPerKelas.map(x=>x.val),
+      ...nilaiPerKelas.map(x=>x.val), ...kegiatanPerKelas.map(x=>x.val),
+      ...targetPerKelas.map(x=>x.val), ...ziyadahPerKelas.map(x=>x.val), 1
     );
 
-    // Harian — semua kelas tampil
-    const harianPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k && inRange(r.tanggal)).length }));
-
-    // Nilai — semua kelas tampil
-    const nilaiPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k && inRange(g.tanggal)).length }));
-
-    // Kegiatan — semua kelas tampil
-    const kegiatanPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
-
-    // Target — semua kelas tampil
-    const targetPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k && inRange(t.tanggal)).length }));
-
-    // Ziyadah — semua kelas tampil
-    const ziyadahPerKelas = kelasList
-      .map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k && inRange(z.tanggal)).length }));
-
     const CHART_COLORS = {
-      absSiswa: "#1d7a5f", absGuru: "#2563a8", jurnal: "#7c3aed",
-      harian: "#d97706", kegiatan: "#0891b2", target: "#dc2626", ziyadah: "#059669",
-      nilai: "#9333ea"
+      absSiswa:"#1d7a5f", absGuru:"#2563a8", jurnal:"#7c3aed",
+      harian:"#d97706", kegiatan:"#0891b2", target:"#dc2626",
+      ziyadah:"#059669", nilai:"#9333ea"
     };
 
-    const ChartCard = ({ title, items, color, maxOverride, heightPx }) => (
+    const ChartCard = ({ title, items, color, maxOverride }) => (
       <div className="card">
         <div className="card-header">
           <div className="card-title">{title}</div>
@@ -1972,7 +1902,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
         <div className="card-body" style={{ overflowX:"auto" }}>
           {items.length === 0
             ? <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>📭 Belum ada data</div>
-            : <BarChart items={items} color={color} maxOverride={maxOverride} heightPx={heightPx} />
+            : <BarChart items={items} color={color} maxOverride={maxOverride} />
           }
         </div>
       </div>
@@ -1987,48 +1917,18 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
               <div className="card-title">📈 Dashboard Statistik</div>
               <div className="card-sub">Data dari database sekolah</div>
             </div>
-            <div className="flex gap-2 items-center" style={{flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <label style={{fontSize:12,color:"#666",whiteSpace:"nowrap"}}>Dari</label>
-                <input className="input" type="date" style={{width:140,fontSize:13,padding:"5px 10px"}}
-                  value={formData.dash_start || today()}
-                  onChange={e => patchForm({ dash_start: e.target.value })} />
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <label style={{fontSize:12,color:"#666",whiteSpace:"nowrap"}}>Sampai</label>
-                <input className="input" type="date" style={{width:140,fontSize:13,padding:"5px 10px"}}
-                  value={formData.dash_end || today()}
-                  onChange={e => patchForm({ dash_end: e.target.value })} />
-              </div>
-              <button className="btn btn-outline" style={{fontSize:12,padding:"5px 12px"}}
-                onClick={() => patchForm({ dash_start: today(), dash_end: today() })}>
-                Hari Ini
-              </button>
-              <button className="btn btn-outline" style={{fontSize:12,padding:"5px 12px"}}
-                onClick={() => {
-                  const d = new Date();
-                  const firstDay = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0];
-                  patchForm({ dash_start: firstDay, dash_end: today() });
-                }}>
-                Bulan Ini
-              </button>
-              <button className="btn btn-outline" style={{fontSize:12,padding:"5px 12px"}}
-                onClick={() => patchForm({ dash_start: "", dash_end: "" })}>
-                Semua
-              </button>
-            </div>
           </div>
           <div className="card-body">
             <div className="grid grid-8" style={{ gap: 12 }}>
               {[
-                { icon: "📖", label: "Total Siswa",    value: data.students.length,          bg:"#dbeafe", c:"#1e40af" },
-                { icon: "✏️", label: "Total Guru",     value: data.teachers.length,           bg:"#d1fae5", c:"#065f46" },
-                { icon: "📊", label: "Data Nilai",     value: data.grades.length,             bg:"#ede9fe", c:"#5b21b6" },
-                { icon: "📋", label: "Absensi Siswa",  value: data.studentAttendance.length,  bg:"#ecfdf5", c:"#065f46" },
-                { icon: "🗒️", label: "Absensi Guru",  value: data.teacherAttendance.length,  bg:"#eff6ff", c:"#1e40af" },
-                { icon: "📝", label: "Lap. Harian",   value: data.dailyReports.length,       bg:"#fef3c7", c:"#92400e" },
-                { icon: "📒", label: "Jurnal",         value: data.journals.length,           bg:"#f5f3ff", c:"#5b21b6" },
-                { icon: "🎯", label: "Target",         value: data.targets.length,            bg:"#fee2e2", c:"#991b1b" },
+                { icon: "📖", label: "Total Siswa",   value: data.students.length,           bg:"#dbeafe", c:"#1e40af" },
+                { icon: "✏️", label: "Total Guru",    value: data.teachers.length,            bg:"#d1fae5", c:"#065f46" },
+                { icon: "📊", label: "Data Nilai",    value: data.grades.length,              bg:"#ede9fe", c:"#5b21b6" },
+                { icon: "📋", label: "Absensi Siswa", value: data.studentAttendance.length,   bg:"#ecfdf5", c:"#065f46" },
+                { icon: "🗒️", label: "Absensi Guru", value: data.teacherAttendance.length,   bg:"#eff6ff", c:"#1e40af" },
+                { icon: "📝", label: "Lap. Harian",  value: data.dailyReports.length,        bg:"#fef3c7", c:"#92400e" },
+                { icon: "📒", label: "Jurnal",        value: data.journals.length,            bg:"#f5f3ff", c:"#5b21b6" },
+                { icon: "🎯", label: "Target",        value: data.targets.length,             bg:"#fee2e2", c:"#991b1b" },
               ].map(s => (
                 <div key={s.label} style={{ background:s.bg, borderRadius:12, padding:"14px 8px", textAlign:"center" }}>
                   <div style={{ fontSize:22, marginBottom:4 }}>{s.icon}</div>
@@ -2042,15 +1942,17 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
         {/* 8 diagram vertikal kebawah, full width */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-          <ChartCard title="📋 Absensi Siswa per Kelas"       items={absSiswaPerKelas} color={CHART_COLORS.absSiswa} maxOverride={sharedMax} />
-          <ChartCard title="🗒️ Absensi Guru per Nama"        items={absGuruPerNama}   color={CHART_COLORS.absGuru}  maxOverride={Math.max(...absGuruPerNama.map(x=>x.val), 30)} heightPx={100} />
-          <ChartCard title="📝 Jurnal per Guru"               items={jurnalPerGuru}    color={CHART_COLORS.jurnal}   maxOverride={Math.max(...jurnalPerGuru.map(x=>x.val), 30)}  heightPx={100} />
+          <ChartCard title="📋 Absensi Siswa per Kelas"       items={absSiswaPerKelas} color={CHART_COLORS.absSiswa} />
+          <ChartCard title="🗒️ Absensi Guru per Nama"        items={absGuruPerNama}   color={CHART_COLORS.absGuru} />
+          <ChartCard title="📝 Jurnal per Guru"               items={jurnalPerGuru}    color={CHART_COLORS.jurnal} />
           <ChartCard title="📄 Laporan Harian per Kelas"      items={harianPerKelas}   color={CHART_COLORS.harian} />
           <ChartCard title="📊 Rekap Nilai per Kelas"         items={nilaiPerKelas}    color={CHART_COLORS.nilai} />
           <ChartCard title="🎯 Laporan Kegiatan per Kelas"    items={kegiatanPerKelas} color={CHART_COLORS.kegiatan} />
           <ChartCard title="🎯 Target Pencapaian per Kelas"   items={targetPerKelas}   color={CHART_COLORS.target} />
           <ChartCard title="📖 Ziyadah Hafalan per Kelas"     items={ziyadahPerKelas}  color={CHART_COLORS.ziyadah} />
         </div>
+
+
       </div>
     );
   }
