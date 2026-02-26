@@ -1883,6 +1883,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
     // ── Data chart ───────────────────────────────────────────────────────
     const kelasList = KELAS_LIST.filter(k => k !== "Semua");
+    const inRange = () => true; // dashboard tampilkan semua data tanpa filter tanggal
     const absSiswaPerKelas  = kelasList.map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
     const absGuruPerNama    = data.teachers.map(t => ({ lbl: t.nama, val: data.teacherAttendance.filter(a => a.teacherId === t.id && inRange(a.tanggal)).length }));
     const jurnalPerGuru     = data.teachers.map(t => ({ lbl: t.nama, val: data.journals.filter(j => j.teacherId === t.id && inRange(j.tanggal)).length }));
