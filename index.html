@@ -806,12 +806,25 @@ const MOCK_STUDENTS = [
 ];
 
 const MOCK_SUBJECTS = [
-  { id: "m1", name: "Al-Qur'an" },
-  { id: "m2", name: "Fiqih" },
-  { id: "m3", name: "Akhlak" },
-  { id: "m4", name: "Bahasa Arab" },
-  { id: "m5", name: "Matematika" },
-  { id: "m6", name: "Bahasa Indonesia" },
+  { id: "m1",  name: "IQRO" },
+  { id: "m2",  name: "TAHFIDZ" },
+  { id: "m3",  name: "MAKHORIJUL KHURUF" },
+  { id: "m4",  name: "HAFALAN HADIST HARIAN" },
+  { id: "m5",  name: "HAFALAN DOA HARIAN" },
+  { id: "m6",  name: "HAFALAN DOA SHOLAT" },
+  { id: "m7",  name: "PRAKTEK AQIDAH DAN AKHLAQ" },
+  { id: "m8",  name: "AKHLAQ" },
+  { id: "m9",  name: "NAHWU" },
+  { id: "m10", name: "BELAJAR HURUF ABJAD" },
+  { id: "m11", name: "BELAJAR ANGKA" },
+  { id: "m12", name: "BAHASA ARAB" },
+  { id: "m13", name: "BAHASA INGGRIS" },
+  { id: "m14", name: "MATEMATIKA" },
+  { id: "m15", name: "IPAS" },
+  { id: "m16", name: "BAHASA INDONESIA" },
+  { id: "m17", name: "PKN" },
+  { id: "m18", name: "PJOK" },
+  { id: "m19", name: "Lainnya" },
 ];
 
 const MOCK_SURAHS = [
@@ -1080,14 +1093,17 @@ function App() {
   const FB_COLLECTIONS = {
     studentAttendance: "absensiSiswa",
     teacherAttendance: "absensiGuru",
-    journals: "jurnal",
-    dailyReports: "harian",
-    grades: "nilai",
-    activities: "kegiatan",
-    targets: "target",
-    ziyadah: "ziyadah",
-    teachers: "guru",
-    students: "siswa",
+    journals:          "jurnal",
+    dailyReports:      "harian",
+    grades:            "nilai",
+    activities:        "kegiatan",
+    targets:           "target",
+    ziyadah:           "ziyadah",
+    teachers:          "guru",
+    students:          "siswa",
+    subjects:          "mapel",
+    quickLinks:        "quickLinks",
+    announcements:     "announcements",
   };
 
   // ── Firebase realtime listeners ──────────────────────────────────────────
@@ -1099,22 +1115,25 @@ function App() {
       }
       const { db } = window.__firebase;
       const collMap = {
-        absensiSiswa: "studentAttendance",
-        absensiGuru:  "teacherAttendance",
-        jurnal:       "journals",
-        harian:       "dailyReports",
-        nilai:        "grades",
-        kegiatan:     "activities",
-        target:       "targets",
-        ziyadah:      "ziyadah",
-        guru:         "teachers",
-        siswa:        "students",
+        absensiSiswa:  "studentAttendance",
+        absensiGuru:   "teacherAttendance",
+        jurnal:        "journals",
+        harian:        "dailyReports",
+        nilai:         "grades",
+        kegiatan:      "activities",
+        target:        "targets",
+        ziyadah:       "ziyadah",
+        guru:          "teachers",
+        siswa:         "students",
+        mapel:         "subjects",
+        quickLinks:    "quickLinks",
+        announcements: "announcements",
       };
       const unsubs = Object.entries(collMap).map(([fbColl, stateKey]) => {
         return db.collection(fbColl).onSnapshot((snap) => {
           const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
 
-          // Auto-seed guru & siswa ke Firebase kalau masih kosong
+          // Auto-seed master data ke Firebase kalau masih kosong
           if (docs.length === 0 && fbColl === "guru") {
             const batch = db.batch();
             MOCK_TEACHERS.forEach(t => batch.set(db.collection("guru").doc(String(t.id)), t));
@@ -1125,11 +1144,25 @@ function App() {
             MOCK_STUDENTS.forEach(s => batch.set(db.collection("siswa").doc(String(s.id)), s));
             batch.commit().catch(e => console.error("Seed siswa error:", e));
           }
+          if (docs.length === 0 && fbColl === "mapel") {
+            const batch = db.batch();
+            MOCK_SUBJECTS.forEach(s => batch.set(db.collection("mapel").doc(String(s.id)), s));
+            batch.commit().catch(e => console.error("Seed mapel error:", e));
+          }
+          if (docs.length === 0 && fbColl === "quickLinks") {
+            const batch = db.batch();
+            MOCK_QUICKLINKS.forEach(l => batch.set(db.collection("quickLinks").doc(String(l.id)), l));
+            batch.commit().catch(e => console.error("Seed quickLinks error:", e));
+          }
+          if (docs.length === 0 && fbColl === "announcements") {
+            const batch = db.batch();
+            MOCK_ANNOUNCEMENTS.forEach(a => batch.set(db.collection("announcements").doc(String(a.id)), a));
+            batch.commit().catch(e => console.error("Seed announcements error:", e));
+          }
 
-          // Update state selalu, termasuk kalau kosong
+          // Update state — proteksi master data kalau Firebase belum seed
           setData(prev => {
-            // Jangan timpa guru & siswa kalau Firebase belum ada datanya (belum seed)
-            const protectedKeys = ["teachers", "students"];
+            const protectedKeys = ["teachers", "students", "subjects", "quickLinks", "announcements"];
             const newVal = (docs.length === 0 && protectedKeys.includes(stateKey)) ? prev[stateKey] : docs;
             const next = { ...prev, [stateKey]: newVal };
             // Simpan ke localStorage supaya data tidak hilang saat reload
@@ -1164,7 +1197,13 @@ function App() {
         return {
           teachers:          parsed.teachers          || MOCK_TEACHERS,
           students:          parsed.students          || MOCK_STUDENTS,
-          subjects:          parsed.subjects          || MOCK_SUBJECTS,
+          subjects: (() => {
+            // Gabungkan MOCK_SUBJECTS (terbaru) dengan custom subjects dari localStorage
+            const stored = parsed.subjects || [];
+            const mockIds = new Set(MOCK_SUBJECTS.map(m => m.id));
+            const customOnly = stored.filter(s => !mockIds.has(s.id));
+            return [...MOCK_SUBJECTS, ...customOnly];
+          })(),
           surahs:            parsed.surahs            || MOCK_SURAHS,
           quickLinks:        parsed.quickLinks        || MOCK_QUICKLINKS,
           announcements:     parsed.announcements     || MOCK_ANNOUNCEMENTS,
@@ -1232,18 +1271,24 @@ function App() {
     const { db } = window.__firebase;
     (async () => {
       try {
-        // Ambil data yang sudah ada di Firebase
+        // Ambil semua id yang ada di Firebase
         const snap = await db.collection(fbColl).get();
         const existingIds = new Set(snap.docs.map(d => d.id));
+        const newIds = new Set(val.map(item => String(item.id)));
 
         const batch = db.batch();
-        // Hanya tambah/update item yang belum ada — jangan hapus yang lama
+
+        // Tambah item baru + update item yang sudah ada (upsert)
         val.forEach(item => {
           const ref = db.collection(fbColl).doc(String(item.id));
-          if (!existingIds.has(String(item.id))) {
-            batch.set(ref, item);
-          }
+          batch.set(ref, item);  // set = upsert (overwrite kalau ada, buat baru kalau tidak)
         });
+
+        // Hapus item yang sudah dihapus dari state
+        snap.docs.forEach(d => {
+          if (!newIds.has(d.id)) batch.delete(d.ref);
+        });
+
         await batch.commit();
         setSyncStatus("success");
         setSyncMsg("✅ Tersimpan ke Firebase");
