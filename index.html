@@ -1104,9 +1104,7 @@ function App() {
       const unsubs = Object.entries(collMap).map(([fbColl, stateKey]) => {
         return db.collection(fbColl).onSnapshot((snap) => {
           const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-          if (docs.length > 0) {
-            setData(prev => ({ ...prev, [stateKey]: docs }));
-          }
+          setData(prev => ({ ...prev, [stateKey]: docs }));
           setLastSync(new Date().toLocaleString("id-ID"));
           setSyncStatus("success");
           setTimeout(() => setSyncStatus("idle"), 2000);
