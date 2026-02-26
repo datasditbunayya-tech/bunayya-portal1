@@ -1104,9 +1104,29 @@ function App() {
       const unsubs = Object.entries(collMap).map(([fbColl, stateKey]) => {
         return db.collection(fbColl).onSnapshot((snap) => {
           const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-          if (docs.length > 0) {
-            setData(prev => ({ ...prev, [stateKey]: docs }));
+
+          // Auto-seed guru & siswa ke Firebase kalau masih kosong
+          if (docs.length === 0 && fbColl === "guru") {
+            const batch = db.batch();
+            MOCK_TEACHERS.forEach(t => batch.set(db.collection("guru").doc(String(t.id)), t));
+            batch.commit().catch(e => console.error("Seed guru error:", e));
           }
+          if (docs.length === 0 && fbColl === "siswa") {
+            const batch = db.batch();
+            MOCK_STUDENTS.forEach(s => batch.set(db.collection("siswa").doc(String(s.id)), s));
+            batch.commit().catch(e => console.error("Seed siswa error:", e));
+          }
+
+          // Update state selalu, termasuk kalau kosong
+          setData(prev => {
+            // Jangan timpa guru & siswa kalau Firebase belum ada datanya (belum seed)
+            const protectedKeys = ["teachers", "students"];
+            const newVal = (docs.length === 0 && protectedKeys.includes(stateKey)) ? prev[stateKey] : docs;
+            const next = { ...prev, [stateKey]: newVal };
+            // Simpan ke localStorage supaya data tidak hilang saat reload
+            try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+            return next;
+          });
           setLastSync(new Date().toLocaleString("id-ID"));
           setSyncStatus("success");
           setTimeout(() => setSyncStatus("idle"), 2000);
@@ -1133,20 +1153,20 @@ function App() {
       if (stored) {
         const parsed = JSON.parse(stored);
         return {
-          teachers: parsed.teachers || MOCK_TEACHERS,
-          students: parsed.students || MOCK_STUDENTS,
-          subjects: parsed.subjects || MOCK_SUBJECTS,
-          surahs: parsed.surahs || MOCK_SURAHS,
-          quickLinks: parsed.quickLinks || MOCK_QUICKLINKS,
-          announcements: parsed.announcements || MOCK_ANNOUNCEMENTS,
+          teachers:          parsed.teachers          || MOCK_TEACHERS,
+          students:          parsed.students          || MOCK_STUDENTS,
+          subjects:          parsed.subjects          || MOCK_SUBJECTS,
+          surahs:            parsed.surahs            || MOCK_SURAHS,
+          quickLinks:        parsed.quickLinks        || MOCK_QUICKLINKS,
+          announcements:     parsed.announcements     || MOCK_ANNOUNCEMENTS,
           studentAttendance: parsed.studentAttendance || MOCK_STUDENT_ATTENDANCE,
           teacherAttendance: parsed.teacherAttendance || MOCK_TEACHER_ATTENDANCE,
-          journals: parsed.journals || [],
-          dailyReports: parsed.dailyReports || [],
-          grades: parsed.grades || [],
-          activities: parsed.activities || [],
-          targets: parsed.targets || [],
-          ziyadah: parsed.ziyadah || [],
+          journals:          parsed.journals          || [],
+          dailyReports:      parsed.dailyReports      || [],
+          grades:            parsed.grades            || [],
+          activities:        parsed.activities        || [],
+          targets:           parsed.targets           || [],
+          ziyadah:           parsed.ziyadah           || [],
         };
       }
     } catch(e) {}
@@ -1154,20 +1174,20 @@ function App() {
   };
 
   const [data, setData] = useState(loadStoredData() || {
-    teachers: MOCK_TEACHERS,
-    students: MOCK_STUDENTS,
-    subjects: MOCK_SUBJECTS,
-    surahs: MOCK_SURAHS,
-    quickLinks: MOCK_QUICKLINKS,
-    announcements: MOCK_ANNOUNCEMENTS,
+    teachers:          MOCK_TEACHERS,
+    students:          MOCK_STUDENTS,
+    subjects:          MOCK_SUBJECTS,
+    surahs:            MOCK_SURAHS,
+    quickLinks:        MOCK_QUICKLINKS,
+    announcements:     MOCK_ANNOUNCEMENTS,
     studentAttendance: MOCK_STUDENT_ATTENDANCE,
     teacherAttendance: MOCK_TEACHER_ATTENDANCE,
-    grades: MOCK_GRADES,
-    journals: MOCK_JOURNALS,
-    dailyReports: MOCK_DAILY_REPORTS,
-    activities: MOCK_ACTIVITIES,
-    targets: MOCK_TARGETS,
-    ziyadah: MOCK_ZIYADAH,
+    grades:            [],
+    journals:          [],
+    dailyReports:      [],
+    activities:        [],
+    targets:           [],
+    ziyadah:           [],
   });
 
   // Login form state
@@ -1188,12 +1208,17 @@ function App() {
     const { db } = window.__firebase;
     (async () => {
       try {
+        // Ambil data yang sudah ada di Firebase
         const snap = await db.collection(fbColl).get();
+        const existingIds = new Set(snap.docs.map(d => d.id));
+
         const batch = db.batch();
-        snap.docs.forEach(d => batch.delete(d.ref));
+        // Hanya tambah/update item yang belum ada — jangan hapus yang lama
         val.forEach(item => {
           const ref = db.collection(fbColl).doc(String(item.id));
-          batch.set(ref, item);
+          if (!existingIds.has(String(item.id))) {
+            batch.set(ref, item);
+          }
         });
         await batch.commit();
         setSyncStatus("success");
@@ -1387,11 +1412,13 @@ function App() {
     const { db } = window.__firebase;
     try {
       const snap = await db.collection(fbColl).get();
+      const existingIds = new Set(snap.docs.map(d => d.id));
       const batch = db.batch();
-      snap.docs.forEach(d => batch.delete(d.ref));
       records.forEach(item => {
         const ref = db.collection(fbColl).doc(String(item.id));
-        batch.set(ref, item);
+        if (!existingIds.has(String(item.id))) {
+          batch.set(ref, item);
+        }
       });
       await batch.commit();
     } catch(e) { console.error("syncCollection error:", e); }
@@ -1417,11 +1444,13 @@ function App() {
       for (const [stateKey, fbColl] of Object.entries(FB_COLLECTIONS)) {
         const items = data[stateKey] || [];
         const snap = await db.collection(fbColl).get();
+        const existingIds = new Set(snap.docs.map(d => d.id));
         const batch = db.batch();
-        snap.docs.forEach(d => batch.delete(d.ref));
         items.forEach(item => {
           const ref = db.collection(fbColl).doc(String(item.id));
-          batch.set(ref, item);
+          if (!existingIds.has(String(item.id))) {
+            batch.set(ref, item);
+          }
         });
         await batch.commit();
       }
@@ -1453,8 +1482,10 @@ function App() {
   const confirmDelete = () => {
     if (!deleteConfirm) return;
     const { collection: collKey, id } = deleteConfirm;
-    patchData(collKey, data[collKey].filter(i => i.id !== id));
+    // Update state lokal - hapus item
+    setData(d => ({ ...d, [collKey]: d[collKey].filter(i => i.id !== id) }));
     setDeleteConfirm(null);
+    // Hapus dari Firebase
     const fbColl = FB_COLLECTIONS[collKey];
     if (fbColl && window.__firebase?.ready) {
       window.__firebase.db.collection(fbColl).doc(String(id)).delete()
@@ -1821,7 +1852,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
       const W = 52, GAP = 10, H = 130, PAD_LEFT = 32, PAD_BOT = 72, PAD_TOP = 16;
       const rawMax = maxOverride || Math.max(...items.map(i => i.val), 1);
 
-      // Garis Y dinamis sesuai data
+      // Garis Y dinamis — bertambah sesuai data
       const niceStep = (max) => {
         if (max <= 5)   return 1;
         if (max <= 10)  return 2;
@@ -1843,7 +1874,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
         <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)}
           style={{ overflow:"visible", display:"block" }}>
 
-          {/* Grid lines horizontal - dinamis sesuai data */}
+          {/* Grid lines horizontal — dinamis */}
           {yTicks.map(v => {
             const y = PAD_TOP + H - (v / maxVal) * H;
             return (
@@ -1856,7 +1887,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
           {/* Bars */}
           {items.map((item, i) => {
-            const x = PAD_LEFT + i * (W + GAP);
+            const x    = PAD_LEFT + i * (W + GAP);
             const barH = maxVal > 0 ? Math.max((item.val/maxVal)*H, item.val>0?4:0) : 0;
             const barY = PAD_TOP + H - barH;
             return (
@@ -1883,22 +1914,14 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
     // ── Data chart ───────────────────────────────────────────────────────
     const kelasList = KELAS_LIST.filter(k => k !== "Semua");
-    const inRange = () => true; // dashboard tampilkan semua data tanpa filter tanggal
-    const absSiswaPerKelas  = kelasList.map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
-    const absGuruPerNama    = data.teachers.map(t => ({ lbl: t.nama, val: data.teacherAttendance.filter(a => a.teacherId === t.id && inRange(a.tanggal)).length }));
-    const jurnalPerGuru     = data.teachers.map(t => ({ lbl: t.nama, val: data.journals.filter(j => j.teacherId === t.id && inRange(j.tanggal)).length }));
-    const harianPerKelas    = kelasList.map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k && inRange(r.tanggal)).length }));
-    const nilaiPerKelas     = kelasList.map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k && inRange(g.tanggal)).length }));
-    const kegiatanPerKelas  = kelasList.map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k && inRange(a.tanggal)).length }));
-    const targetPerKelas    = kelasList.map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k && inRange(t.tanggal)).length }));
-    const ziyadahPerKelas   = kelasList.map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k && inRange(z.tanggal)).length }));
-
-    const globalMax = Math.max(
-      ...absSiswaPerKelas.map(x=>x.val), ...absGuruPerNama.map(x=>x.val),
-      ...jurnalPerGuru.map(x=>x.val), ...harianPerKelas.map(x=>x.val),
-      ...nilaiPerKelas.map(x=>x.val), ...kegiatanPerKelas.map(x=>x.val),
-      ...targetPerKelas.map(x=>x.val), ...ziyadahPerKelas.map(x=>x.val), 1
-    );
+    const absSiswaPerKelas  = kelasList.map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k).length }));
+    const absGuruPerNama    = data.teachers.map(t => ({ lbl: t.nama, val: data.teacherAttendance.filter(a => a.teacherId === t.id).length }));
+    const jurnalPerGuru     = data.teachers.map(t => ({ lbl: t.nama, val: data.journals.filter(j => j.teacherId === t.id).length }));
+    const harianPerKelas    = kelasList.map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k).length }));
+    const nilaiPerKelas     = kelasList.map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k).length }));
+    const kegiatanPerKelas  = kelasList.map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k).length }));
+    const targetPerKelas    = kelasList.map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k).length }));
+    const ziyadahPerKelas   = kelasList.map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k).length }));
 
     const CHART_COLORS = {
       absSiswa:"#1d7a5f", absGuru:"#2563a8", jurnal:"#7c3aed",
