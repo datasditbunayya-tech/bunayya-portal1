@@ -2369,8 +2369,14 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             </div>
             <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap", gap:8}}>
               <div className="select-wrap" style={{width:140}}>
-                <select className="select" style={{fontSize:13}} value={formData.rw_abs_kelas || "Semua"} onChange={e => patchForm({rw_abs_kelas: e.target.value})}>
+                <select className="select" style={{fontSize:13}} value={formData.rw_abs_kelas || "Semua"} onChange={e => patchForm({rw_abs_kelas: e.target.value, rw_abs_nama: ""})}>
                   {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </div>
+              <div className="select-wrap" style={{width:170}}>
+                <select className="select" style={{fontSize:13}} value={formData.rw_abs_nama || ""} onChange={e => patchForm({rw_abs_nama: e.target.value})}>
+                  <option value="">Semua Nama</option>
+                  {data.students.filter(s => !formData.rw_abs_kelas || formData.rw_abs_kelas === "Semua" || s.class_name === formData.rw_abs_kelas).map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
                 </select>
               </div>
               <div className="select-wrap" style={{width:150}}>
@@ -2388,6 +2394,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
                 <tbody>
                   {(() => { const filtered = data.studentAttendance.filter(a =>
                     (formData.rw_abs_kelas === "Semua" || !formData.rw_abs_kelas || a.kelas === formData.rw_abs_kelas) &&
+                    (!formData.rw_abs_nama || a.studentId === formData.rw_abs_nama) &&
                     (!formData.rw_abs_bulan || (a.tanggal && a.tanggal.slice(5,7) === formData.rw_abs_bulan))
                   ); return filtered.length === 0
                     ? <tr><td colSpan={5} className="empty-state">Belum ada data absensi</td></tr>
@@ -2450,8 +2457,14 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             </div>
             <div className="flex gap-2 items-center mb-3" style={{ flexWrap:"wrap", gap:8 }}>
               <div className="select-wrap" style={{ width:140 }}>
-                <select className="select" style={{ fontSize:13 }} value={formData.rw_guru_kelas || "Semua"} onChange={e => patchForm({ rw_guru_kelas: e.target.value })}>
+                <select className="select" style={{ fontSize:13 }} value={formData.rw_guru_kelas || "Semua"} onChange={e => patchForm({ rw_guru_kelas: e.target.value, rw_guru_nama: "" })}>
                   {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </div>
+              <div className="select-wrap" style={{ width:170 }}>
+                <select className="select" style={{ fontSize:13 }} value={formData.rw_guru_nama || ""} onChange={e => patchForm({ rw_guru_nama: e.target.value })}>
+                  <option value="">Semua Nama</option>
+                  {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
                 </select>
               </div>
               <div className="select-wrap" style={{ width:160 }}>
@@ -2470,6 +2483,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
                   {(() => {
                     const fg = data.teacherAttendance.filter(a =>
                       (formData.rw_guru_kelas === "Semua" || !formData.rw_guru_kelas || a.kelas === formData.rw_guru_kelas) &&
+                      (!formData.rw_guru_nama || a.teacherId === formData.rw_guru_nama) &&
                       (!formData.rw_guru_bulan || (a.tanggal && a.tanggal.slice(5,7) === formData.rw_guru_bulan))
                     ).sort((a,b) => (b.tanggal||"").localeCompare(a.tanggal||""));
                     return fg.length === 0
@@ -2556,8 +2570,14 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             </div>
             <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap", gap:8}}>
               <div className="select-wrap" style={{width:140}}>
-                <select className="select" style={{fontSize:13}} value={formData.rw_jrn_kelas || "Semua"} onChange={e => patchForm({rw_jrn_kelas: e.target.value})}>
+                <select className="select" style={{fontSize:13}} value={formData.rw_jrn_kelas || "Semua"} onChange={e => patchForm({rw_jrn_kelas: e.target.value, rw_jrn_nama: ""})}>
                   {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </div>
+              <div className="select-wrap" style={{width:170}}>
+                <select className="select" style={{fontSize:13}} value={formData.rw_jrn_nama || ""} onChange={e => patchForm({rw_jrn_nama: e.target.value})}>
+                  <option value="">Semua Guru</option>
+                  {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
                 </select>
               </div>
               <div className="select-wrap" style={{width:150}}>
@@ -2572,6 +2592,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             <div id="tbl-jurnal" className="row-list">
               {(() => { const fj = data.journals.filter(j =>
                 (formData.rw_jrn_kelas === "Semua" || !formData.rw_jrn_kelas || j.kelas === formData.rw_jrn_kelas) &&
+                (!formData.rw_jrn_nama || j.teacherId === formData.rw_jrn_nama) &&
                 (!formData.rw_jrn_bulan || (j.tanggal && j.tanggal.slice(5,7) === formData.rw_jrn_bulan))
               ); return fj.length === 0
                 ? <div className="empty-state" style={{padding:20,textAlign:"center",color:"#999"}}>Belum ada data jurnal</div>
@@ -2692,13 +2713,21 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             <div className="card-title">📋 Riwayat Nilai</div>
               <button id="btn-pdf-tbl-nilai" onClick={() => downloadTablePDF("tbl-nilai","Riwayat Rekap Nilai","Rekap-Nilai")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
             <div className="flex gap-2 wrap">
-              {["filterNilaiKelas", "filterNilaiMapel"].map((key, idx) => (
-                <div key={key} className="select-wrap" style={{ width: 150 }}>
-                  <select className="select" value={formData[key] || "Semua"} onChange={e => patchForm({ [key]: e.target.value })}>
-                    {idx === 0 ? KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>) : [<option key="s" value="Semua">Semua Mapel</option>, ...data.subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)]}
+              {[["filterNilaiKelas","kelas"],["filterNilaiMapel","mapel"]].map(([key,type]) => (
+                <div key={key} className="select-wrap" style={{ width:150 }}>
+                  <select className="select" value={formData[key] || "Semua"} onChange={e => patchForm({ [key]: e.target.value, ...(type==="kelas" ? {filterNilaiNama:""} : {}) })}>
+                    {type==="kelas"
+                      ? KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)
+                      : [<option key="s" value="Semua">Semua Mapel</option>, ...data.subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)]}
                   </select>
                 </div>
               ))}
+              <div className="select-wrap" style={{ width:170 }}>
+                <select className="select" value={formData.filterNilaiNama || ""} onChange={e => patchForm({filterNilaiNama: e.target.value})}>
+                  <option value="">Semua Nama</option>
+                  {data.students.filter(s => !formData.filterNilaiKelas || formData.filterNilaiKelas === "Semua" || s.class_name === formData.filterNilaiKelas).map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
+                </select>
+              </div>
             </div>
           </div>
           <div className="card-body">
@@ -2709,7 +2738,8 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
                   {data.grades.filter(g => {
                     const fk = formData.filterNilaiKelas || "Semua";
                     const fm = formData.filterNilaiMapel || "Semua";
-                    return (fk === "Semua" || g.kelas === fk) && (fm === "Semua" || g.mataPelajaran === fm);
+                    const fn = formData.filterNilaiNama || "";
+                    return (fk === "Semua" || g.kelas === fk) && (fm === "Semua" || g.mataPelajaran === fm) && (!fn || g.studentId === fn);
                   }).map(g => (
                     <tr key={g.id}>
                       <td className="text-sm">{g.tanggal}</td>
