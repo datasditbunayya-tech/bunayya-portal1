@@ -1409,8 +1409,12 @@ function App() {
       kelas: formData.abs_kelas, status: s.status || "Hadir",
       student: { nama: s.nama }
     }));
-    // Update state lokal (tambah ke array)
-    patchData("studentAttendance", [...data.studentAttendance, ...newRecords]);
+    // Update state lokal (tambah ke array) - functional updater agar tidak stale
+    setData(d => {
+      const next = { ...d, studentAttendance: [...d.studentAttendance, ...newRecords] };
+      try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
     // Tulis HANYA item baru ke Firebase
     writeDocs("studentAttendance", newRecords);
     patchForm({ abs_students: null, abs_kelas: "", abs_tanggal: "" });
@@ -1422,8 +1426,19 @@ function App() {
     if (!formData.abs_kelasGuru) { alert("⚠️ Pilih kelas terlebih dahulu!"); return; }
     const t = data.teachers.find(t => t.id === formData.abs_teacherId);
     if (!t) { alert("⚠️ Guru tidak ditemukan!"); return; }
-    const rec = { id: genId(), teacherId: t.id, tanggal: formData.abs_tanggalGuru || today(), kelas: formData.abs_kelasGuru, status: formData.abs_statusGuru || "Hadir", teacher: { nama: t.nama } };
-    patchData("teacherAttendance", [...data.teacherAttendance, rec]);
+    const rec = {
+      id: genId(),
+      teacherId: t.id,
+      tanggal: formData.abs_tanggalGuru || today(),
+      kelas: formData.abs_kelasGuru,
+      status: formData.abs_statusGuru || "Hadir",
+      teacher: { nama: t.nama }
+    };
+    setData(d => {
+      const next = { ...d, teacherAttendance: [...d.teacherAttendance, rec] };
+      try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
     writeDoc("teacherAttendance", rec);
     patchForm({ abs_teacherId: "", abs_kelasGuru: "", abs_tanggalGuru: "", abs_statusGuru: "Hadir" });
     alert("✅ Absensi guru berhasil disimpan!");
@@ -1433,7 +1448,7 @@ function App() {
     const t = data.teachers.find(t => t.id === formData.j_teacher);
     if (!t || !formData.j_kelas || !formData.j_topik) { alert("⚠️ Lengkapi data jurnal!"); return; }
     const rec = { id: genId(), teacherId: t.id, tanggal: formData.j_tanggal || today(), kelas: formData.j_kelas, mataPelajaran: formData.j_mapel || "", topik: formData.j_topik, kegiatan: formData.j_kegiatan || "", catatan: formData.j_catatan || "", teacher: { nama: t.nama } };
-    patchData("journals", [...data.journals, rec]);
+    setData(d => { const next = { ...d, journals: [...d.journals, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDoc("journals", rec);
     patchForm({ j_topik: "", j_kegiatan: "", j_catatan: "" });
     alert("✅ Jurnal berhasil disimpan!");
@@ -1443,7 +1458,7 @@ function App() {
     const s = data.students.find(s => s.id === formData.h_siswa);
     if (!s || !formData.h_bahasan || !formData.h_hasil) { alert("⚠️ Lengkapi data harian!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: formData.h_tanggal || today(), kelas: s.class_name, bahasan: formData.h_bahasan, halaman: formData.h_halaman || "", hasil: formData.h_hasil, catatan: formData.h_catatan || "" };
-    patchData("dailyReports", [...data.dailyReports, rec]);
+    setData(d => { const next = { ...d, dailyReports: [...d.dailyReports, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDoc("dailyReports", rec);
     patchForm({ h_bahasan: "", h_halaman: "", h_catatan: "" });
     alert("✅ Laporan harian berhasil disimpan!");
@@ -1461,7 +1476,7 @@ function App() {
       penilaian: formData[`kg_p_${kelas}_${s.id}`] || "Sangat Baik",
       deskripsi: ""
     }));
-    patchData("activities", [...data.activities, ...records]);
+    setData(d => { const next = { ...d, activities: [...d.activities, ...records] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDocs("activities", records);
     const patch = {};
     students.forEach(s => { patch[`kg_p_${kelas}_${s.id}`] = ""; });
@@ -1473,7 +1488,7 @@ function App() {
     const s = data.students.find(s => s.id === formData.tr_siswa);
     if (!s || !formData.tr_mapel) { alert("⚠️ Lengkapi data target!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: today(), kelas: s.class_name, mataPelajaran: formData.tr_mapel, progressSaatIni: parseInt(formData.tr_progress) || 0, progressTotal: parseInt(formData.tr_total) || 100, satuan: formData.tr_satuan || "", hasil: formData.tr_hasil || "Lulus", catatan: formData.tr_catatan || "" };
-    patchData("targets", [...data.targets, rec]);
+    setData(d => { const next = { ...d, targets: [...d.targets, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDoc("targets", rec);
     patchForm({ tr_mapel: "", tr_progress: "", tr_total: "", tr_satuan: "", tr_catatan: "" });
     alert("✅ Target berhasil disimpan!");
@@ -1483,7 +1498,7 @@ function App() {
     const s = data.students.find(s => s.id === formData.z_siswa);
     if (!s || !formData.z_juz || !formData.z_hasil) { alert("⚠️ Lengkapi data ziyadah!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: formData.z_tanggal || today(), kelas: s.class_name, juz: formData.z_juz, surat: formData.z_surat || "", progress: formData.z_progress || "", hasil: formData.z_hasil, catatan: formData.z_catatan || "" };
-    patchData("ziyadah", [...data.ziyadah, rec]);
+    setData(d => { const next = { ...d, ziyadah: [...d.ziyadah, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDoc("ziyadah", rec);
     patchForm({ z_juz: "", z_surat: "", z_progress: "", z_catatan: "" });
     alert("✅ Ziyadah berhasil disimpan!");
@@ -1499,7 +1514,7 @@ function App() {
       .filter(s => formData[`nm_v_${kelas}_${s.id}`])
       .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama } }));
     if (!records.length) { alert("Masukkan nilai untuk minimal satu siswa!"); return; }
-    patchData("grades", [...data.grades, ...records]);
+    setData(d => { const next = { ...d, grades: [...d.grades, ...records] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDocs("grades", records);
     const patch = {};
     students.forEach(s => { patch[`nm_v_${kelas}_${s.id}`] = ""; });
@@ -1632,7 +1647,7 @@ function App() {
     { id: "data-sheets", label: "📊 Data Siswa" },
     { id: "kontrol", label: "🎛️ Kontrol Data" },
     { id: "absensi-siswa", label: "📋 Absensi Siswa" },
-    { id: "absensi-guru", label: "🗒️ Absensi Guru" },
+    { id: "absensi-guru",  label: "🗒️ Absensi Guru" },
     { id: "jurnal", label: "📝 Jurnal Mengajar" },
     { id: "rekap-nilai", label: "📈 Rekap Nilai" },
     { id: "cetak-rapor", label: "📄 Cetak Rapor" },
@@ -2364,17 +2379,17 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
           <div className="mt-6">
             <div style={{ fontWeight: 700, marginBottom: 12 }}>Riwayat Absensi Guru</div>
-            <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap", gap:8}}>
-              <div className="select-wrap" style={{width:140}}>
-                <select className="select" style={{fontSize:13}} value={formData.rw_guru_kelas || "Semua"} onChange={e => patchForm({rw_guru_kelas: e.target.value})}>
+            <div className="flex gap-2 items-center mb-3" style={{ flexWrap:"wrap", gap:8 }}>
+              <div className="select-wrap" style={{ width:140 }}>
+                <select className="select" style={{ fontSize:13 }} value={formData.rw_guru_kelas || "Semua"} onChange={e => patchForm({ rw_guru_kelas: e.target.value })}>
                   {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
               </div>
-              <div className="select-wrap" style={{width:150}}>
-                <select className="select" style={{fontSize:13}} value={formData.rw_guru_bulan || ""} onChange={e => patchForm({rw_guru_bulan: e.target.value})}>
+              <div className="select-wrap" style={{ width:160 }}>
+                <select className="select" style={{ fontSize:13 }} value={formData.rw_guru_bulan || ""} onChange={e => patchForm({ rw_guru_bulan: e.target.value })}>
                   <option value="">Semua Bulan</option>
-                  {["01","02","03","04","05","06","07","08","09","10","11","12"].map(m => (
-                    <option key={m} value={m}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(m)-1]}</option>
+                  {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m,i) => (
+                    <option key={m} value={m}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][i]}</option>
                   ))}
                 </select>
               </div>
@@ -2383,20 +2398,23 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
               <table>
                 <thead><tr><th>Nama Guru</th><th>Kelas</th><th>Tanggal</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
-                  {(() => { const fg = data.teacherAttendance.filter(a =>
-                    (formData.rw_guru_kelas === "Semua" || !formData.rw_guru_kelas || a.kelas === formData.rw_guru_kelas) &&
-                    (!formData.rw_guru_bulan || (a.tanggal && a.tanggal.slice(5,7) === formData.rw_guru_bulan))
-                  ); return fg.length === 0
-                    ? <tr><td colSpan={5} className="empty-state">Belum ada data absensi guru</td></tr>
-                    : fg.map(a => (
-                      <tr key={a.id}>
-                        <td style={{fontWeight:600}}>{a.teacher?.nama}</td>
-                        <td><Badge variant="blue">{a.kelas}</Badge></td>
-                        <td>{a.tanggal}</td>
-                        <td><StatusBadge status={a.status} /></td>
-                        <td><button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("teacherAttendance", a.id, a.teacher?.nama)}><Icon.Trash /></button></td>
-                      </tr>
-                  ))})()}
+                  {(() => {
+                    const fg = data.teacherAttendance.filter(a =>
+                      (formData.rw_guru_kelas === "Semua" || !formData.rw_guru_kelas || a.kelas === formData.rw_guru_kelas) &&
+                      (!formData.rw_guru_bulan || (a.tanggal && a.tanggal.slice(5,7) === formData.rw_guru_bulan))
+                    ).sort((a,b) => (b.tanggal||"").localeCompare(a.tanggal||""));
+                    return fg.length === 0
+                      ? <tr><td colSpan={5} className="empty-state">Belum ada data absensi guru</td></tr>
+                      : fg.map(a => (
+                        <tr key={a.id}>
+                          <td style={{ fontWeight:600 }}>{a.teacher?.nama}</td>
+                          <td><Badge variant="blue">{a.kelas}</Badge></td>
+                          <td>{a.tanggal}</td>
+                          <td><StatusBadge status={a.status} /></td>
+                          <td><button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("teacherAttendance", a.id, a.teacher?.nama)}><Icon.Trash /></button></td>
+                        </tr>
+                      ));
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -3618,7 +3636,7 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
         hasil: formData.tr_hasil,
         catatan: formData.tr_catatan || ""
       };
-      patchData("targets", [...data.targets, rec]);
+      setData(d => { const next = { ...d, targets: [...d.targets, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
       writeDoc && writeDoc("targets", rec);
       patchForm({ tr_siswa: "", tr_mapel: "", tr_progress_val: "", tr_progress_total: "", tr_satuan: "", tr_hasil: "", tr_catatan: "" });
       alert("✅ Target berhasil disimpan!");
