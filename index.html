@@ -974,8 +974,7 @@ const HASIL_HAFALAN = ["Lancar", "Cukup", "Perlu Latihan"];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const today = () => new Date().toISOString().split("T")[0];
-let idCounter = 1000;
-const genId = () => `gen_${idCounter++}`;
+const genId = () => `${Date.now()}_${Math.random().toString(36).slice(2,9)}`;
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
 const Icon = {
@@ -1160,23 +1159,14 @@ function App() {
             batch.commit().catch(e => console.error("Seed announcements error:", e));
           }
 
-          // Update state — gabungkan data Firebase dengan state lokal
-          // Aturan: state tidak boleh berkurang (data tidak boleh hilang)
+          // Firebase = sumber kebenaran tunggal
+          // Tidak ada merge lokal — setiap perubahan langsung dari Firestore
           setData(prev => {
             const protectedKeys = ["teachers", "students", "subjects", "quickLinks", "announcements"];
-
-            let newVal;
-            if (docs.length === 0 && protectedKeys.includes(stateKey)) {
-              // Master data: pakai state lokal kalau Firebase belum seed
-              newVal = prev[stateKey];
-            } else {
-              // Gabungkan: Firebase sebagai sumber utama, tambahkan item lokal yang belum ada di Firebase
-              const fbIds = new Set(docs.map(d => String(d.id)));
-              const localOnly = (prev[stateKey] || []).filter(item => !fbIds.has(String(item.id)));
-              // Pakai Firebase + item lokal yang belum ter-sync (hindari data hilang sementara)
-              newVal = [...docs, ...localOnly];
-            }
-
+            // Master data: pakai state lokal HANYA kalau Firebase benar-benar kosong (belum seed)
+            const newVal = (docs.length === 0 && protectedKeys.includes(stateKey))
+              ? prev[stateKey]
+              : docs;
             const next = { ...prev, [stateKey]: newVal };
             try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
             return next;
