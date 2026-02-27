@@ -1250,10 +1250,34 @@ function App() {
       return s ? JSON.parse(s) : {};
     } catch(e) { return {}; }
   });
+
+  // Listener Firebase untuk loginConfig (dokumen tunggal)
+  React.useEffect(() => {
+    const tryListen = () => {
+      if (!window.__firebase?.ready) { setTimeout(tryListen, 500); return; }
+      const { db } = window.__firebase;
+      return db.collection("appConfig").doc("loginConfig").onSnapshot(snap => {
+        if (snap.exists) {
+          const cfg = snap.data();
+          setLoginConfig(cfg);
+          try { localStorage.setItem("bunayya_login_config", JSON.stringify(cfg)); } catch(e) {}
+        }
+      }, err => console.error("loginConfig listener:", err));
+    };
+    const unsub = tryListen();
+    return () => { if (typeof unsub === "function") unsub(); };
+  }, []);
+
   const saveLoginConfig = (patch) => {
     setLoginConfig(prev => {
       const next = { ...prev, ...patch };
       try { localStorage.setItem("bunayya_login_config", JSON.stringify(next)); } catch(e) {}
+      // Simpan ke Firebase
+      if (window.__firebase?.ready) {
+        window.__firebase.db.collection("appConfig").doc("loginConfig")
+          .set(next)
+          .catch(e => console.error("saveLoginConfig error:", e));
+      }
       return next;
     });
   };
@@ -1641,10 +1665,15 @@ function App() {
       {/* Header */}
       <header className="header">
         <div className="header-brand">
-          <div className="header-logo">🕌</div>
+          <div className="header-logo">
+            {loginConfig.logoUrl
+              ? <img src={loginConfig.logoUrl} alt="Logo" style={{ width:36, height:36, borderRadius:"50%", objectFit:"cover" }} />
+              : "🕌"
+            }
+          </div>
           <div>
-            <div className="header-title">Portal Pendidikan</div>
-            <div className="header-sub">Bunayya Islamic School</div>
+            <div className="header-title">{loginConfig.eduTag || "Portal Pendidikan"}</div>
+            <div className="header-sub">{loginConfig.namaSekolah || "Bunayya Islamic School"}</div>
           </div>
         </div>
         <div className="header-user">
@@ -2868,6 +2897,23 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
   // Pintasan & Pengumuman
   if (menu === "kelola-pintasan") {
+    // Kompres gambar ke max 400px, kualitas 0.7 agar muat di Firestore (<1MB)
+    const compressImage = (file, maxW = 400, quality = 0.7) => new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, maxW / Math.max(img.width, img.height));
+          const canvas = document.createElement("canvas");
+          canvas.width  = img.width  * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
     const openAddLink = () => patchForm({ showLinkDialog: true, editLinkId: null, newLinkTitle: "", newLinkUrl: "", newLinkIcon: "🔗" });
     const openEditLink = (l) => patchForm({ showLinkDialog: true, editLinkId: l.id, newLinkTitle: l.title, newLinkUrl: l.url, newLinkIcon: l.icon });
     const saveLink = () => {
@@ -3014,9 +3060,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
                   <input type="file" accept="image/*" style={{ display:"none" }} onChange={e => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = ev => saveLoginConfig({ logoUrl: ev.target.result });
-                    reader.readAsDataURL(file);
+                    compressImage(file, 300, 0.75).then(dataUrl => saveLoginConfig({ logoUrl: dataUrl }));
                   }} />
                 </label>
                 {loginConfig.logoUrl && (
@@ -3081,9 +3125,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
           };
           const uploadImage = (idx, file) => {
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = ev => updateSlide(idx, { imgUrl: ev.target.result });
-            reader.readAsDataURL(file);
+            compressImage(file, 600, 0.75).then(dataUrl => updateSlide(idx, { imgUrl: dataUrl }));
           };
 
           return (
