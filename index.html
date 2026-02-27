@@ -1160,12 +1160,24 @@ function App() {
             batch.commit().catch(e => console.error("Seed announcements error:", e));
           }
 
-          // Update state — proteksi master data kalau Firebase belum seed
+          // Update state — gabungkan data Firebase dengan state lokal
+          // Aturan: state tidak boleh berkurang (data tidak boleh hilang)
           setData(prev => {
             const protectedKeys = ["teachers", "students", "subjects", "quickLinks", "announcements"];
-            const newVal = (docs.length === 0 && protectedKeys.includes(stateKey)) ? prev[stateKey] : docs;
+
+            let newVal;
+            if (docs.length === 0 && protectedKeys.includes(stateKey)) {
+              // Master data: pakai state lokal kalau Firebase belum seed
+              newVal = prev[stateKey];
+            } else {
+              // Gabungkan: Firebase sebagai sumber utama, tambahkan item lokal yang belum ada di Firebase
+              const fbIds = new Set(docs.map(d => String(d.id)));
+              const localOnly = (prev[stateKey] || []).filter(item => !fbIds.has(String(item.id)));
+              // Pakai Firebase + item lokal yang belum ter-sync (hindari data hilang sementara)
+              newVal = [...docs, ...localOnly];
+            }
+
             const next = { ...prev, [stateKey]: newVal };
-            // Simpan ke localStorage supaya data tidak hilang saat reload
             try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
             return next;
           });
