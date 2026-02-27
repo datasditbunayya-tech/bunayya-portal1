@@ -1288,42 +1288,52 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [addDialog, setAddDialog] = useState(null);
 
-  const patchData = (key, val) => {
-    setData(d => ({ ...d, [key]: val }));
-    const fbColl = FB_COLLECTIONS[key];
+  // ── Tulis SATU item ke Firebase tanpa menyentuh data lain ─────────────────
+  const writeDoc = (collKey, item) => {
+    const fbColl = FB_COLLECTIONS[collKey];
     if (!fbColl || !window.__firebase?.ready) return;
-    const { db } = window.__firebase;
-    (async () => {
-      try {
-        // Ambil semua id yang ada di Firebase
-        const snap = await db.collection(fbColl).get();
-        const existingIds = new Set(snap.docs.map(d => d.id));
-        const newIds = new Set(val.map(item => String(item.id)));
-
-        const batch = db.batch();
-
-        // Tambah item baru + update item yang sudah ada (upsert)
-        val.forEach(item => {
-          const ref = db.collection(fbColl).doc(String(item.id));
-          batch.set(ref, item);  // set = upsert (overwrite kalau ada, buat baru kalau tidak)
-        });
-
-        // Hapus item yang sudah dihapus dari state
-        snap.docs.forEach(d => {
-          if (!newIds.has(d.id)) batch.delete(d.ref);
-        });
-
-        await batch.commit();
+    window.__firebase.db.collection(fbColl).doc(String(item.id))
+      .set(item)
+      .then(() => {
         setSyncStatus("success");
-        setSyncMsg("✅ Tersimpan ke Firebase");
-        setTimeout(() => { setSyncStatus("idle"); setSyncMsg(""); }, 2000);
-      } catch(err) {
-        console.error("Firebase write error:", err);
+        setSyncMsg("✅ Tersimpan");
+        setTimeout(() => { setSyncStatus("idle"); setSyncMsg(""); }, 1500);
+      })
+      .catch(err => {
+        console.error("writeDoc error:", err);
         setSyncStatus("error");
         setSyncMsg("❌ Gagal simpan: " + err.message);
-        setTimeout(() => { setSyncStatus("idle"); setSyncMsg(""); }, 4000);
-      }
-    })();
+      });
+  };
+
+  // ── Tulis BEBERAPA item sekaligus (batch), tidak hapus item lain ──────────
+  const writeDocs = (collKey, items) => {
+    const fbColl = FB_COLLECTIONS[collKey];
+    if (!fbColl || !window.__firebase?.ready || !items.length) return;
+    const { db } = window.__firebase;
+    const batch = db.batch();
+    items.forEach(item => batch.set(db.collection(fbColl).doc(String(item.id)), item));
+    batch.commit()
+      .then(() => {
+        setSyncStatus("success");
+        setSyncMsg(`✅ ${items.length} data tersimpan`);
+        setTimeout(() => { setSyncStatus("idle"); setSyncMsg(""); }, 1500);
+      })
+      .catch(err => {
+        console.error("writeDocs error:", err);
+        setSyncStatus("error");
+        setSyncMsg("❌ Gagal simpan: " + err.message);
+      });
+  };
+
+  // ── patchData: update state lokal saja, tidak tulis ke Firebase ───────────
+  // (penulisan Firebase dilakukan langsung di setiap save function via writeDoc/writeDocs)
+  const patchData = (key, val) => {
+    setData(d => {
+      const next = { ...d, [key]: val };
+      try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
   };
   const patchForm = patch => setFormData(f => ({ ...f, ...patch }));
   const showLoading = () => setLoading(true);
@@ -1379,17 +1389,18 @@ function App() {
 
   // ── SAVE HANDLERS ────────────────────────────────────────────────────────────
   const saveAbsensiSiswa = () => {
-    if (!formData.abs_kelas) { alert("⚠️ Pilih kelas terlebih dahulu!"); return; }
+    if (!formData.abs_kelas)    { alert("⚠️ Pilih kelas terlebih dahulu!"); return; }
     if (!formData.abs_students) { alert("⚠️ Klik tombol Muat Data terlebih dahulu!"); return; }
     const tanggal = formData.abs_tanggal || today();
     const newRecords = formData.abs_students.map(s => ({
-      id: genId(), studentId: s.id, tanggal: tanggal,
+      id: genId(), studentId: s.id, tanggal,
       kelas: formData.abs_kelas, status: s.status || "Hadir",
       student: { nama: s.nama }
     }));
-    const updatedAbsSiswa = [...data.studentAttendance, ...newRecords];
-    patchData("studentAttendance", updatedAbsSiswa);
-    syncCollection("absensiSiswa", newRecords).catch(() => {});
+    // Update state lokal (tambah ke array)
+    patchData("studentAttendance", [...data.studentAttendance, ...newRecords]);
+    // Tulis HANYA item baru ke Firebase
+    writeDocs("studentAttendance", newRecords);
     patchForm({ abs_students: null, abs_kelas: "", abs_tanggal: "" });
     alert("✅ Absensi " + newRecords.length + " siswa berhasil disimpan!");
   };
@@ -1399,53 +1410,47 @@ function App() {
     if (!formData.abs_kelasGuru) { alert("⚠️ Pilih kelas terlebih dahulu!"); return; }
     const t = data.teachers.find(t => t.id === formData.abs_teacherId);
     if (!t) { alert("⚠️ Guru tidak ditemukan!"); return; }
-    const tanggal = formData.abs_tanggalGuru || today();
-    const kelas = formData.abs_kelasGuru;
-    const status = formData.abs_statusGuru || "Hadir";
-    const rec = { id: genId(), teacherId: t.id, tanggal: tanggal, kelas: kelas, status: status, teacher: { nama: t.nama } };
+    const rec = { id: genId(), teacherId: t.id, tanggal: formData.abs_tanggalGuru || today(), kelas: formData.abs_kelasGuru, status: formData.abs_statusGuru || "Hadir", teacher: { nama: t.nama } };
     patchData("teacherAttendance", [...data.teacherAttendance, rec]);
-    syncCollection("absensiGuru", [rec]).catch(() => {});
+    writeDoc("teacherAttendance", rec);
     patchForm({ abs_teacherId: "", abs_kelasGuru: "", abs_tanggalGuru: "", abs_statusGuru: "Hadir" });
     alert("✅ Absensi guru berhasil disimpan!");
   };
 
   const saveJurnal = () => {
     const t = data.teachers.find(t => t.id === formData.j_teacher);
-    if (!t || !formData.j_kelas || !formData.j_topik) return;
+    if (!t || !formData.j_kelas || !formData.j_topik) { alert("⚠️ Lengkapi data jurnal!"); return; }
     const rec = { id: genId(), teacherId: t.id, tanggal: formData.j_tanggal || today(), kelas: formData.j_kelas, mataPelajaran: formData.j_mapel || "", topik: formData.j_topik, kegiatan: formData.j_kegiatan || "", catatan: formData.j_catatan || "", teacher: { nama: t.nama } };
     patchData("journals", [...data.journals, rec]);
-    patchForm({ j_teacher: "", j_kelas: "", j_mapel: "", j_topik: "", j_kegiatan: "", j_catatan: "" });
-    syncCollection("jurnal", [rec]).catch(() => {});
+    writeDoc("journals", rec);
+    patchForm({ j_topik: "", j_kegiatan: "", j_catatan: "" });
     alert("✅ Jurnal berhasil disimpan!");
   };
 
   const saveHarian = () => {
     const s = data.students.find(s => s.id === formData.h_siswa);
-    if (!s || !formData.h_bahasan || !formData.h_hasil) return;
+    if (!s || !formData.h_bahasan || !formData.h_hasil) { alert("⚠️ Lengkapi data harian!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: formData.h_tanggal || today(), kelas: s.class_name, bahasan: formData.h_bahasan, halaman: formData.h_halaman || "", hasil: formData.h_hasil, catatan: formData.h_catatan || "" };
     patchData("dailyReports", [...data.dailyReports, rec]);
-    syncCollection("harian", [rec]).catch(() => {});
+    writeDoc("dailyReports", rec);
+    patchForm({ h_bahasan: "", h_halaman: "", h_catatan: "" });
     alert("✅ Laporan harian berhasil disimpan!");
   };
 
-  const saveKegiatan = () => {
-    // dipanggil dari saveKegiatanKelas di dalam PortalSiswa
-  };
+  const saveKegiatan = () => {};
   const saveKegiatanKelas = (kelas) => {
-    const mapel = formData[`kg_mapel_${kelas}`];
+    const mapel   = formData[`kg_mapel_${kelas}`];
     const tanggal = formData[`kg_tanggal_${kelas}`] || today();
     if (!mapel) { alert("Pilih mata pelajaran terlebih dahulu!"); return; }
     const students = data.students.filter(s => s.class_name === kelas);
-    const records = students
-      .map(s => ({
-        id: genId(), studentId: s.id, tanggal, kelas,
-        kategori: mapel, mataPelajaran: mapel,
-        penilaian: formData[`kg_p_${kelas}_${s.id}`] || "Sangat Baik",
-        deskripsi: ""
-      }));
-
+    const records  = students.map(s => ({
+      id: genId(), studentId: s.id, tanggal, kelas,
+      kategori: mapel, mataPelajaran: mapel,
+      penilaian: formData[`kg_p_${kelas}_${s.id}`] || "Sangat Baik",
+      deskripsi: ""
+    }));
     patchData("activities", [...data.activities, ...records]);
-    syncCollection("kegiatan", records).catch(() => {});
+    writeDocs("activities", records);
     const patch = {};
     students.forEach(s => { patch[`kg_p_${kelas}_${s.id}`] = ""; });
     patchForm(patch);
@@ -1454,32 +1459,36 @@ function App() {
 
   const saveTarget = () => {
     const s = data.students.find(s => s.id === formData.tr_siswa);
-    if (!s || !formData.tr_mapel) return;
+    if (!s || !formData.tr_mapel) { alert("⚠️ Lengkapi data target!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: today(), kelas: s.class_name, mataPelajaran: formData.tr_mapel, progressSaatIni: parseInt(formData.tr_progress) || 0, progressTotal: parseInt(formData.tr_total) || 100, satuan: formData.tr_satuan || "", hasil: formData.tr_hasil || "Lulus", catatan: formData.tr_catatan || "" };
     patchData("targets", [...data.targets, rec]);
-    syncCollection("target", [rec]).catch(() => {});
+    writeDoc("targets", rec);
+    patchForm({ tr_mapel: "", tr_progress: "", tr_total: "", tr_satuan: "", tr_catatan: "" });
     alert("✅ Target berhasil disimpan!");
   };
 
   const saveZiyadah = () => {
     const s = data.students.find(s => s.id === formData.z_siswa);
-    if (!s || !formData.z_juz || !formData.z_hasil) return;
+    if (!s || !formData.z_juz || !formData.z_hasil) { alert("⚠️ Lengkapi data ziyadah!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: formData.z_tanggal || today(), kelas: s.class_name, juz: formData.z_juz, surat: formData.z_surat || "", progress: formData.z_progress || "", hasil: formData.z_hasil, catatan: formData.z_catatan || "" };
     patchData("ziyadah", [...data.ziyadah, rec]);
-    syncCollection("ziyadah", [rec]).catch(() => {});
+    writeDoc("ziyadah", rec);
+    patchForm({ z_juz: "", z_surat: "", z_progress: "", z_catatan: "" });
     alert("✅ Ziyadah berhasil disimpan!");
   };
 
   const saveNilaiKelas = (kelas) => {
-    const mapel = formData[`nm_mapel_${kelas}`];
-    const jenis = formData[`nm_jenis_${kelas}`];
+    const mapel   = formData[`nm_mapel_${kelas}`];
+    const jenis   = formData[`nm_jenis_${kelas}`];
     const tanggal = formData[`nm_tanggal_${kelas}`] || today();
     if (!mapel || !jenis) { alert("Pilih mapel dan jenis nilai!"); return; }
     const students = data.students.filter(s => s.class_name === kelas);
-    const records = students.filter(s => formData[`nm_v_${kelas}_${s.id}`]).map(s => ({ id: genId(), studentId: s.id, tanggal, kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama } }));
+    const records  = students
+      .filter(s => formData[`nm_v_${kelas}_${s.id}`])
+      .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama } }));
     if (!records.length) { alert("Masukkan nilai untuk minimal satu siswa!"); return; }
     patchData("grades", [...data.grades, ...records]);
-    syncCollection("nilai", records).catch(() => {});
+    writeDocs("grades", records);
     const patch = {};
     students.forEach(s => { patch[`nm_v_${kelas}_${s.id}`] = ""; });
     patchForm(patch);
@@ -1759,7 +1768,7 @@ function App() {
           <PortalGuru menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} />
         )}
         {portal === "siswa" && (
-          <PortalSiswa menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} syncCollection={syncCollection} />
+          <PortalSiswa menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
         )}
         {portal === "wali" && (
           <PortalWali menu={menu} data={data} formData={formData} patchForm={patchForm} user={user} />
@@ -2816,11 +2825,13 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     const saveGuru = () => {
       if (!formData.newGuruNip || !formData.newGuruNama) { alert("NIP dan Nama wajib diisi!"); return; }
       if (formData.editGuruId) {
-        patchData("teachers", data.teachers.map(t => t.id === formData.editGuruId
-          ? { ...t, nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus }
-          : t));
+        const updated = { ...data.teachers.find(t => t.id === formData.editGuruId), nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus };
+        patchData("teachers", data.teachers.map(t => t.id === formData.editGuruId ? updated : t));
+        writeDoc("teachers", updated);
       } else {
-        patchData("teachers", [...data.teachers, { id: genId(), nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus || "Aktif" }]);
+        const rec = { id: genId(), nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus || "Aktif" };
+        patchData("teachers", [...data.teachers, rec]);
+        writeDoc("teachers", rec);
       }
       patchForm({ showGuruDialog: false });
     };
@@ -2919,9 +2930,13 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     const saveLink = () => {
       if (!formData.newLinkTitle) { alert("Judul link wajib diisi!"); return; }
       if (formData.editLinkId) {
-        patchData("quickLinks", data.quickLinks.map(l => l.id === formData.editLinkId ? { ...l, title: formData.newLinkTitle, url: formData.newLinkUrl, icon: formData.newLinkIcon } : l));
+        const updated = { ...data.quickLinks.find(l => l.id === formData.editLinkId), title: formData.newLinkTitle, url: formData.newLinkUrl, icon: formData.newLinkIcon };
+        patchData("quickLinks", data.quickLinks.map(l => l.id === formData.editLinkId ? updated : l));
+        writeDoc("quickLinks", updated);
       } else {
-        patchData("quickLinks", [...data.quickLinks, { id: genId(), title: formData.newLinkTitle, url: formData.newLinkUrl || "#", icon: formData.newLinkIcon || "🔗" }]);
+        const rec = { id: genId(), title: formData.newLinkTitle, url: formData.newLinkUrl || "#", icon: formData.newLinkIcon || "🔗" };
+        patchData("quickLinks", [...data.quickLinks, rec]);
+        writeDoc("quickLinks", rec);
       }
       patchForm({ showLinkDialog: false });
     };
@@ -2930,9 +2945,13 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     const saveAnn = () => {
       if (!formData.newAnnJudul) { alert("Judul pengumuman wajib diisi!"); return; }
       if (formData.editAnnId) {
-        patchData("announcements", data.announcements.map(a => a.id === formData.editAnnId ? { ...a, judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi, icon: formData.newAnnIcon } : a));
+        const updated = { ...data.announcements.find(a => a.id === formData.editAnnId), judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi, icon: formData.newAnnIcon };
+        patchData("announcements", data.announcements.map(a => a.id === formData.editAnnId ? updated : a));
+        writeDoc("announcements", updated);
       } else {
-        patchData("announcements", [...data.announcements, { id: genId(), judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi || "", icon: formData.newAnnIcon || "📢" }]);
+        const rec = { id: genId(), judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi || "", icon: formData.newAnnIcon || "📢" };
+        patchData("announcements", [...data.announcements, rec]);
+        writeDoc("announcements", rec);
       }
       patchForm({ showAnnDialog: false });
     };
@@ -3199,9 +3218,13 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     const saveMapel = () => {
       if (!formData.newMapelNama) { alert("Nama mapel wajib diisi!"); return; }
       if (formData.editMapelId) {
-        patchData("subjects", data.subjects.map(s => s.id === formData.editMapelId ? { ...s, name: formData.newMapelNama } : s));
+        const updated = { ...data.subjects.find(s => s.id === formData.editMapelId), name: formData.newMapelNama };
+        patchData("subjects", data.subjects.map(s => s.id === formData.editMapelId ? updated : s));
+        writeDoc("subjects", updated);
       } else {
-        patchData("subjects", [...data.subjects, { id: genId(), name: formData.newMapelNama }]);
+        const rec = { id: genId(), name: formData.newMapelNama };
+        patchData("subjects", [...data.subjects, rec]);
+        writeDoc("subjects", rec);
       }
       patchForm({ showMapelDialog: false });
     };
@@ -3246,7 +3269,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
 
 // ─── PORTAL SISWA ─────────────────────────────────────────────────────────────
-function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAccess, saveHarian, saveKegiatan, saveKegiatanKelas, saveTarget, saveZiyadah, selectedKelas, setSelectedKelas, deleteItem, syncCollection }) {
+function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAccess, saveHarian, saveKegiatan, saveKegiatanKelas, saveTarget, saveZiyadah, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
   const todayStr = today();
 
   if (menu === "dashboard") {
@@ -3584,8 +3607,8 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
         catatan: formData.tr_catatan || ""
       };
       patchData("targets", [...data.targets, rec]);
+      writeDoc && writeDoc("targets", rec);
       patchForm({ tr_siswa: "", tr_mapel: "", tr_progress_val: "", tr_progress_total: "", tr_satuan: "", tr_hasil: "", tr_catatan: "" });
-      if (syncCollection) syncCollection("target", [rec]).catch(() => {});
       alert("✅ Target berhasil disimpan!");
     };
 
@@ -3854,13 +3877,13 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
         alert("NIS, Nama, dan Kelas wajib diisi!"); return;
       }
       if (formData.editSiswaId) {
-        patchData("students", data.students.map(s => s.id === formData.editSiswaId
-          ? { ...s, nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas }
-          : s));
+        const updated = { ...data.students.find(s => s.id === formData.editSiswaId), nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas };
+        patchData("students", data.students.map(s => s.id === formData.editSiswaId ? updated : s));
+        writeDoc("students", updated);
       } else {
-        patchData("students", [...data.students, {
-          id: genId(), nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas
-        }]);
+        const rec = { id: genId(), nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas };
+        patchData("students", [...data.students, rec]);
+        writeDoc("students", rec);
       }
       patchForm({ showSiswaDialog: false });
     };
