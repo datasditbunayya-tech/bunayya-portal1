@@ -8,6 +8,7 @@
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <!-- Firebase SDK (compat version - works with Babel) -->
   <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-app-compat.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/firebase@10.12.0/firebase-firestore-compat.min.js"></script>
@@ -1079,6 +1080,78 @@ function Dialog({ open, onClose, title, children, footer }) {
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// ── Download tabel riwayat sebagai PDF ──────────────────────────────────────
+function downloadTablePDF(tableId, judul, namaFile) {
+  const el = document.getElementById(tableId);
+  if (!el) { alert("Tabel tidak ditemukan."); return; }
+  if (typeof html2canvas === "undefined" || typeof window.jspdf === "undefined") {
+    alert("Library belum siap, tunggu sebentar lalu coba lagi."); return;
+  }
+  const btn = document.getElementById("btn-pdf-" + tableId);
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Memproses..."; }
+
+  html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false })
+    .then(canvas => {
+      const { jsPDF } = window.jspdf;
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      // A4 landscape jika tabel lebar
+      const isLandscape = imgW > imgH;
+      const pdf = new jsPDF({ orientation: isLandscape ? "landscape" : "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const usableW = pageW - margin * 2;
+      const scale = usableW / (imgW / 2); // /2 karena scale:2 di html2canvas
+      const imgHmm = (imgH / 2) * scale;
+
+      // Header
+      pdf.setFontSize(13);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("BUNAYYA ISLAMIC SCHOOL", pageW / 2, margin + 4, { align: "center" });
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      pdf.text(judul, pageW / 2, margin + 9, { align: "center" });
+      pdf.setFontSize(8);
+      pdf.text("Dicetak: " + new Date().toLocaleDateString("id-ID", { day:"numeric", month:"long", year:"numeric" }), pageW / 2, margin + 13, { align: "center" });
+
+      // Garis pemisah
+      const startY = margin + 16;
+      pdf.setDrawColor(29, 122, 95);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, startY, pageW - margin, startY);
+
+      // Tabel sebagai gambar
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      let y = startY + 3;
+      const maxH = pageH - y - margin;
+
+      if (imgHmm <= maxH) {
+        pdf.addImage(imgData, "JPEG", margin, y, usableW, imgHmm);
+      } else {
+        // Multi-page jika tabel panjang
+        let srcY = 0;
+        while (srcY < imgH) {
+          const sliceH = Math.min((maxH / scale) * 2, imgH - srcY);
+          const sliceCanvas = document.createElement("canvas");
+          sliceCanvas.width = imgW;
+          sliceCanvas.height = sliceH;
+          sliceCanvas.getContext("2d").drawImage(canvas, 0, srcY, imgW, sliceH, 0, 0, imgW, sliceH);
+          pdf.addImage(sliceCanvas.toDataURL("image/jpeg", 0.95), "JPEG", margin, y, usableW, (sliceH / 2) * scale);
+          srcY += sliceH;
+          if (srcY < imgH) { pdf.addPage(); y = margin; }
+        }
+      }
+
+      pdf.save(namaFile + ".pdf");
+      if (btn) { btn.disabled = false; btn.textContent = "⬇️ PDF"; }
+    })
+    .catch(err => {
+      alert("Gagal: " + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = "⬇️ PDF"; }
+    });
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [portal, setPortal] = useState("guru");
@@ -2290,7 +2363,10 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
           {/* Riwayat Absensi Siswa */}
           <div className="mt-6">
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>📋 Riwayat Absensi Siswa</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+              <div style={{ fontWeight:700 }}>📋 Riwayat Absensi Siswa</div>
+              <button id="btn-pdf-tbl-abs-siswa" onClick={() => downloadTablePDF("tbl-abs-siswa","Riwayat Absensi Siswa","Absensi-Siswa")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            </div>
             <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap", gap:8}}>
               <div className="select-wrap" style={{width:140}}>
                 <select className="select" style={{fontSize:13}} value={formData.rw_abs_kelas || "Semua"} onChange={e => patchForm({rw_abs_kelas: e.target.value})}>
@@ -2307,7 +2383,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
               </div>
             </div>
             <div className="table-wrap">
-              <table>
+              <table id="tbl-abs-siswa">
                 <thead><tr><th>Tanggal</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                   {(() => { const filtered = data.studentAttendance.filter(a =>
@@ -2368,7 +2444,10 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
           <button className="btn btn-primary" onClick={saveAbsensiGuru}><Icon.Save /> Simpan Absensi</button>
 
           <div className="mt-6">
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Riwayat Absensi Guru</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+              <div style={{ fontWeight:700 }}>Riwayat Absensi Guru</div>
+              <button id="btn-pdf-tbl-abs-guru" onClick={() => downloadTablePDF("tbl-abs-guru","Riwayat Absensi Guru","Absensi-Guru")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            </div>
             <div className="flex gap-2 items-center mb-3" style={{ flexWrap:"wrap", gap:8 }}>
               <div className="select-wrap" style={{ width:140 }}>
                 <select className="select" style={{ fontSize:13 }} value={formData.rw_guru_kelas || "Semua"} onChange={e => patchForm({ rw_guru_kelas: e.target.value })}>
@@ -2385,7 +2464,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
               </div>
             </div>
             <div className="table-wrap">
-              <table>
+              <table id="tbl-abs-guru">
                 <thead><tr><th>Nama Guru</th><th>Kelas</th><th>Tanggal</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                   {(() => {
@@ -2471,7 +2550,10 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
           </div>
 
           <div className="mt-6">
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Riwayat Jurnal</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+              <div style={{ fontWeight:700 }}>Riwayat Jurnal</div>
+              <button id="btn-pdf-tbl-jurnal" onClick={() => downloadTablePDF("tbl-jurnal","Riwayat Jurnal Mengajar","Jurnal-Mengajar")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            </div>
             <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap", gap:8}}>
               <div className="select-wrap" style={{width:140}}>
                 <select className="select" style={{fontSize:13}} value={formData.rw_jrn_kelas || "Semua"} onChange={e => patchForm({rw_jrn_kelas: e.target.value})}>
@@ -2487,7 +2569,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
                 </select>
               </div>
             </div>
-            <div className="row-list">
+            <div id="tbl-jurnal" className="row-list">
               {(() => { const fj = data.journals.filter(j =>
                 (formData.rw_jrn_kelas === "Semua" || !formData.rw_jrn_kelas || j.kelas === formData.rw_jrn_kelas) &&
                 (!formData.rw_jrn_bulan || (j.tanggal && j.tanggal.slice(5,7) === formData.rw_jrn_bulan))
@@ -2608,6 +2690,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
         <div className="card mb-4">
           <div className="card-header">
             <div className="card-title">📋 Riwayat Nilai</div>
+              <button id="btn-pdf-tbl-nilai" onClick={() => downloadTablePDF("tbl-nilai","Riwayat Rekap Nilai","Rekap-Nilai")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
             <div className="flex gap-2 wrap">
               {["filterNilaiKelas", "filterNilaiMapel"].map((key, idx) => (
                 <div key={key} className="select-wrap" style={{ width: 150 }}>
@@ -2620,7 +2703,7 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
           </div>
           <div className="card-body">
             <div className="table-wrap">
-              <table>
+              <table id="tbl-nilai">
                 <thead><tr><th>Tanggal</th><th>Nama</th><th>Kelas</th><th>Mapel</th><th>Jenis</th><th>Nilai</th><th>Aksi</th></tr></thead>
                 <tbody>
                   {data.grades.filter(g => {
@@ -3385,7 +3468,10 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
           <button className="btn btn-blue" onClick={saveHarian} disabled={!formData.h_siswa || !formData.h_bahasan || !formData.h_hasil}><Icon.Save /> Simpan Laporan</button>
 
           <div className="mt-6">
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>📝 Riwayat Laporan Harian</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+              <div style={{ fontWeight:700 }}>📝 Riwayat Laporan Harian</div>
+              <button id="btn-pdf-tbl-harian" onClick={() => downloadTablePDF("tbl-harian","Riwayat Laporan Harian","Laporan-Harian")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            </div>
             <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap",gap:8}}>
               <div className="select-wrap" style={{width:140}}>
                 <select className="select" style={{fontSize:13}} value={formData.hr_fkelas || "Semua"} onChange={e => patchForm({hr_fkelas: e.target.value, hr_fnama: ""})}>
@@ -3407,7 +3493,7 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
                 </select>
               </div>
             </div>
-            <div className="row-list">
+            <div id="tbl-harian" className="row-list">
               {(() => {
                 const fhr = data.dailyReports.filter(r => {
                   const s = data.students.find(s => s.id === r.studentId);
@@ -3551,7 +3637,11 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
 
         {/* Riwayat */}
         <div className="card mb-4">
-          <div className="card-header"><div className="card-title">🎯 Riwayat Laporan Kegiatan</div>
+          <div className="card-header">
+            <div className="card-title">🎯 Riwayat Laporan Kegiatan</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+              <button id="btn-pdf-tbl-kegiatan" onClick={() => downloadTablePDF("tbl-kegiatan","Riwayat Laporan Kegiatan","Laporan-Kegiatan")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            </div>
             <div className="flex gap-2 items-center" style={{flexWrap:"wrap",gap:8}}>
               <div className="select-wrap" style={{width:140}}>
                 <select className="select" style={{fontSize:13}} value={formData.kg_fkelas || "Semua"} onChange={e => patchForm({kg_fkelas: e.target.value, kg_fnama: ""})}>
@@ -3575,7 +3665,7 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
             </div></div>
           <div className="card-body">
             <div className="table-wrap">
-              <table>
+              <table id="tbl-kegiatan">
                 <thead><tr><th>Tanggal</th><th>Nama Siswa</th><th>Kelas</th><th>Mata Pelajaran</th><th>Penilaian</th><th>Aksi</th></tr></thead>
                 <tbody>
                   {(() => {
@@ -3747,6 +3837,7 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
         <div className="card">
           <div className="card-header">
             <div className="card-title">🎯 Riwayat Target Pencapaian</div>
+            <button id="btn-pdf-tbl-target" onClick={() => downloadTablePDF("tbl-target","Riwayat Target Pencapaian","Target-Pencapaian")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
             <div className="flex gap-2 items-center" style={{flexWrap:"wrap",gap:8}}>
               <div className="select-wrap" style={{width:140}}>
                 <select className="select" style={{fontSize:13}} value={formData.filterTargetKelas || "Semua"} onChange={e => patchForm({filterTargetKelas: e.target.value, tr_fnama: ""})}>
@@ -3771,7 +3862,7 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
           </div>
           <div className="card-body">
             <div className="table-wrap">
-              <table>
+              <table id="tbl-target">
                 <thead>
                   <tr><th>Tanggal</th><th>Nama Siswa</th><th>Kelas</th><th>Mata Pelajaran</th><th>Progress</th><th>Hasil</th><th>Catatan</th><th>Aksi</th></tr>
                 </thead>
@@ -3835,7 +3926,10 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
           <button className="btn btn-blue" onClick={saveZiyadah} disabled={!formData.z_siswa || !formData.z_juz || !formData.z_hasil}><Icon.Save /> Simpan Ziyadah</button>
 
           <div className="mt-6">
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>📖 Riwayat Ziyadah</div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+              <div style={{ fontWeight:700 }}>📖 Riwayat Ziyadah</div>
+              <button id="btn-pdf-tbl-ziyadah" onClick={() => downloadTablePDF("tbl-ziyadah","Riwayat Ziyadah","Ziyadah")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            </div>
             <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap",gap:8}}>
               <div className="select-wrap" style={{width:140}}>
                 <select className="select" style={{fontSize:13}} value={formData.zy_fkelas || "Semua"} onChange={e => patchForm({zy_fkelas: e.target.value, zy_fnama: ""})}>
@@ -3857,7 +3951,7 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
                 </select>
               </div>
             </div>
-            <div className="row-list">
+            <div id="tbl-ziyadah" className="row-list">
               {(() => {
                 const fzy = data.ziyadah.filter(z => {
                   const s = data.students.find(s => s.id === z.studentId);
