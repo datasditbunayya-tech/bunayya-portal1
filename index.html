@@ -2065,6 +2065,15 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     // ── BarChart vertikal SVG ─────────────────────────────────────────────
     const BarChart = ({ items, color = "#1d7a5f", maxOverride }) => {
       const W = 52, GAP = 10, H = 130, PAD_LEFT = 32, PAD_BOT = 72, PAD_TOP = 16;
+      const totalMax = items.reduce((a,i) => a + i.val, 0);
+
+      // Jika semua nilai 0, tampilkan pesan kosong — tidak render grafik
+      if (totalMax === 0) return (
+        <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>
+          📭 Belum ada data pada rentang tanggal ini
+        </div>
+      );
+
       const rawMax = maxOverride || Math.max(...items.map(i => i.val), 1);
 
       // Garis Y dinamis — bertambah sesuai data
@@ -2082,8 +2091,6 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
       for (let v = 0; v <= maxVal; v += step) yTicks.push(v);
 
       const totalW = items.length * W + (items.length - 1) * GAP + PAD_LEFT + 16;
-
-      if (items.length === 0) return <div className="empty-state">Belum ada data</div>;
 
       return (
         <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)}
@@ -2177,11 +2184,11 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             <div className="flex gap-2 items-center" style={{flexWrap:"wrap", gap:8}}>
               <span style={{fontSize:12, color:"#64748b", fontWeight:600}}>Dari</span>
               <input type="date" className="input" style={{width:140, fontSize:13, padding:"5px 8px"}}
-                value={formData.dash_dari || todayStr}
+                value={formData.dash_dari || ""}
                 onChange={e => patchForm({dash_dari: e.target.value})} />
               <span style={{fontSize:12, color:"#64748b", fontWeight:600}}>Sampai</span>
               <input type="date" className="input" style={{width:140, fontSize:13, padding:"5px 8px"}}
-                value={formData.dash_sampai || todayStr}
+                value={formData.dash_sampai || ""}
                 onChange={e => patchForm({dash_sampai: e.target.value})} />
               <button onClick={() => patchForm({dash_dari: todayStr, dash_sampai: todayStr})}
                 style={{padding:"5px 10px", fontSize:12, fontWeight:700, background:"#e0f2fe", color:"#0369a1", border:"none", borderRadius:8, cursor:"pointer"}}>Hari Ini</button>
