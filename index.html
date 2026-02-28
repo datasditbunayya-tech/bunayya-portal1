@@ -2170,26 +2170,48 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
               <div className="card-title">📈 Dashboard Statistik</div>
               <div className="card-sub">Data dari database sekolah</div>
             </div>
+            <div className="flex gap-2 items-center" style={{flexWrap:"wrap", gap:8}}>
+              <span style={{fontSize:12, color:"#64748b", fontWeight:600}}>Dari</span>
+              <input type="date" className="input" style={{width:140, fontSize:13, padding:"5px 8px"}}
+                value={formData.dash_dari || todayStr}
+                onChange={e => patchForm({dash_dari: e.target.value})} />
+              <span style={{fontSize:12, color:"#64748b", fontWeight:600}}>Sampai</span>
+              <input type="date" className="input" style={{width:140, fontSize:13, padding:"5px 8px"}}
+                value={formData.dash_sampai || todayStr}
+                onChange={e => patchForm({dash_sampai: e.target.value})} />
+              <button onClick={() => patchForm({dash_dari: todayStr, dash_sampai: todayStr})}
+                style={{padding:"5px 10px", fontSize:12, fontWeight:700, background:"#e0f2fe", color:"#0369a1", border:"none", borderRadius:8, cursor:"pointer"}}>Hari Ini</button>
+              <button onClick={() => patchForm({dash_dari: "", dash_sampai: ""})}
+                style={{padding:"5px 10px", fontSize:12, fontWeight:700, background:"#f1f5f9", color:"#475569", border:"none", borderRadius:8, cursor:"pointer"}}>Semua</button>
+            </div>
           </div>
           <div className="card-body">
-            <div className="grid grid-8" style={{ gap: 12 }}>
-              {[
-                { icon: "📖", label: "Total Siswa",   value: data.students.length,           bg:"#dbeafe", c:"#1e40af" },
-                { icon: "✏️", label: "Total Guru",    value: data.teachers.length,            bg:"#d1fae5", c:"#065f46" },
-                { icon: "📊", label: "Data Nilai",    value: data.grades.length,              bg:"#ede9fe", c:"#5b21b6" },
-                { icon: "📋", label: "Absensi Siswa", value: data.studentAttendance.length,   bg:"#ecfdf5", c:"#065f46" },
-                { icon: "🗒️", label: "Absensi Guru", value: data.teacherAttendance.length,   bg:"#eff6ff", c:"#1e40af" },
-                { icon: "📝", label: "Lap. Harian",  value: data.dailyReports.length,        bg:"#fef3c7", c:"#92400e" },
-                { icon: "📒", label: "Jurnal",        value: data.journals.length,            bg:"#f5f3ff", c:"#5b21b6" },
-                { icon: "🎯", label: "Target",        value: data.targets.length,             bg:"#fee2e2", c:"#991b1b" },
-              ].map(s => (
-                <div key={s.label} style={{ background:s.bg, borderRadius:12, padding:"14px 8px", textAlign:"center" }}>
-                  <div style={{ fontSize:22, marginBottom:4 }}>{s.icon}</div>
-                  <div style={{ fontSize:22, fontWeight:800, color:s.c }}>{s.value}</div>
-                  <div style={{ fontSize:11, color:s.c, opacity:.8, marginTop:2 }}>{s.label}</div>
+            {(() => {
+              const dari   = formData.dash_dari   || "";
+              const sampai = formData.dash_sampai || "";
+              const inRange = tgl => (!dari || tgl >= dari) && (!sampai || tgl <= sampai);
+              const stats = [
+                { icon: "📖", label: "Total Siswa",   value: data.students.length,                                        bg:"#dbeafe", c:"#1e40af" },
+                { icon: "✏️", label: "Total Guru",    value: data.teachers.length,                                        bg:"#d1fae5", c:"#065f46" },
+                { icon: "📊", label: "Data Nilai",    value: data.grades.filter(g => inRange(g.tanggal)).length,          bg:"#ede9fe", c:"#5b21b6" },
+                { icon: "📋", label: "Absensi Siswa", value: data.studentAttendance.filter(a => inRange(a.tanggal)).length, bg:"#ecfdf5", c:"#065f46" },
+                { icon: "🗒️", label: "Absensi Guru", value: data.teacherAttendance.filter(a => inRange(a.tanggal)).length, bg:"#eff6ff", c:"#1e40af" },
+                { icon: "📝", label: "Lap. Harian",  value: data.dailyReports.filter(r => inRange(r.tanggal)).length,    bg:"#fef3c7", c:"#92400e" },
+                { icon: "📒", label: "Jurnal",        value: data.journals.filter(j => inRange(j.tanggal)).length,        bg:"#f5f3ff", c:"#5b21b6" },
+                { icon: "🎯", label: "Target",        value: data.targets.filter(t => inRange(t.tanggal)).length,         bg:"#fee2e2", c:"#991b1b" },
+              ];
+              return (
+                <div className="grid grid-8" style={{ gap: 12 }}>
+                  {stats.map(s => (
+                    <div key={s.label} style={{ background:s.bg, borderRadius:12, padding:"14px 8px", textAlign:"center" }}>
+                      <div style={{ fontSize:22, marginBottom:4 }}>{s.icon}</div>
+                      <div style={{ fontSize:22, fontWeight:800, color:s.c }}>{s.value}</div>
+                      <div style={{ fontSize:11, color:s.c, opacity:.8, marginTop:2 }}>{s.label}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         </div>
 
