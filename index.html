@@ -2129,14 +2129,18 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
     // ── Data chart ───────────────────────────────────────────────────────
     const kelasList = KELAS_LIST.filter(k => k !== "Semua");
-    const absSiswaPerKelas  = kelasList.map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k).length }));
-    const absGuruPerNama    = data.teachers.map(t => ({ lbl: t.nama, val: data.teacherAttendance.filter(a => a.teacherId === t.id).length }));
-    const jurnalPerGuru     = data.teachers.map(t => ({ lbl: t.nama, val: data.journals.filter(j => j.teacherId === t.id).length }));
-    const harianPerKelas    = kelasList.map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k).length }));
-    const nilaiPerKelas     = kelasList.map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k).length }));
-    const kegiatanPerKelas  = kelasList.map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k).length }));
-    const targetPerKelas    = kelasList.map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k).length }));
-    const ziyadahPerKelas   = kelasList.map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k).length }));
+    const dashDari   = formData.dash_dari   || "";
+    const dashSampai = formData.dash_sampai || "";
+    const inDashRange = tgl => (!dashDari || tgl >= dashDari) && (!dashSampai || tgl <= dashSampai);
+
+    const absSiswaPerKelas  = kelasList.map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inDashRange(a.tanggal)).length }));
+    const absGuruPerNama    = data.teachers.map(t => ({ lbl: t.nama, val: data.teacherAttendance.filter(a => a.teacherId === t.id && inDashRange(a.tanggal)).length }));
+    const jurnalPerGuru     = data.teachers.map(t => ({ lbl: t.nama, val: data.journals.filter(j => j.teacherId === t.id && inDashRange(j.tanggal)).length }));
+    const harianPerKelas    = kelasList.map(k => ({ lbl: k, val: data.dailyReports.filter(r => r.kelas === k && inDashRange(r.tanggal)).length }));
+    const nilaiPerKelas     = kelasList.map(k => ({ lbl: k, val: data.grades.filter(g => g.kelas === k && inDashRange(g.tanggal)).length }));
+    const kegiatanPerKelas  = kelasList.map(k => ({ lbl: k, val: data.activities.filter(a => a.kelas === k && inDashRange(a.tanggal)).length }));
+    const targetPerKelas    = kelasList.map(k => ({ lbl: k, val: data.targets.filter(t => t.kelas === k && inDashRange(t.tanggal)).length }));
+    const ziyadahPerKelas   = kelasList.map(k => ({ lbl: k, val: data.ziyadah.filter(z => z.kelas === k && inDashRange(z.tanggal)).length }));
 
     const CHART_COLORS = {
       absSiswa:"#1d7a5f", absGuru:"#2563a8", jurnal:"#7c3aed",
