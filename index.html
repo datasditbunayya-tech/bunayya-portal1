@@ -2136,8 +2136,8 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
 
     // ── Data chart ───────────────────────────────────────────────────────
     const kelasList = KELAS_LIST.filter(k => k !== "Semua");
-    const dashDari   = formData.dash_dari   || "";
-    const dashSampai = formData.dash_sampai || "";
+    const dashDari   = formData.dash_dari   ?? todayStr;
+    const dashSampai = formData.dash_sampai ?? todayStr;
     const inDashRange = tgl => (!dashDari || tgl >= dashDari) && (!dashSampai || tgl <= dashSampai);
 
     const absSiswaPerKelas  = kelasList.map(k => ({ lbl: k, val: data.studentAttendance.filter(a => a.kelas === k && inDashRange(a.tanggal)).length }));
@@ -2184,11 +2184,11 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
             <div className="flex gap-2 items-center" style={{flexWrap:"wrap", gap:8}}>
               <span style={{fontSize:12, color:"#64748b", fontWeight:600}}>Dari</span>
               <input type="date" className="input" style={{width:140, fontSize:13, padding:"5px 8px"}}
-                value={formData.dash_dari || ""}
+                value={formData.dash_dari ?? todayStr}
                 onChange={e => patchForm({dash_dari: e.target.value})} />
               <span style={{fontSize:12, color:"#64748b", fontWeight:600}}>Sampai</span>
               <input type="date" className="input" style={{width:140, fontSize:13, padding:"5px 8px"}}
-                value={formData.dash_sampai || ""}
+                value={formData.dash_sampai ?? todayStr}
                 onChange={e => patchForm({dash_sampai: e.target.value})} />
               <button onClick={() => patchForm({dash_dari: todayStr, dash_sampai: todayStr})}
                 style={{padding:"5px 10px", fontSize:12, fontWeight:700, background:"#e0f2fe", color:"#0369a1", border:"none", borderRadius:8, cursor:"pointer"}}>Hari Ini</button>
@@ -2198,8 +2198,8 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
           </div>
           <div className="card-body">
             {(() => {
-              const dari   = formData.dash_dari   || "";
-              const sampai = formData.dash_sampai || "";
+              const dari   = formData.dash_dari   ?? todayStr;
+              const sampai = formData.dash_sampai ?? todayStr;
               const inRange = tgl => (!dari || tgl >= dari) && (!sampai || tgl <= sampai);
               const stats = [
                 { icon: "📖", label: "Total Siswa",   value: data.students.length,                                        bg:"#dbeafe", c:"#1e40af" },
