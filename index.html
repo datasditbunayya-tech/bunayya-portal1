@@ -1855,7 +1855,7 @@ function App() {
       {/* Content */}
       <div className="content">
         {portal === "guru" && (
-          <PortalGuru menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} />
+          <PortalGuru menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} writeDoc={writeDoc} />
         )}
         {portal === "siswa" && (
           <PortalSiswa menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
@@ -2055,7 +2055,7 @@ function LoginPage({ loginRole, setLoginRole, loginForm, setLoginForm, loginErro
 }
 
 // ─── PORTAL GURU ─────────────────────────────────────────────────────────────
-function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas, setSelectedKelas, searchQuery, setSearchQuery, user, canAccess, saveAbsensiSiswa, saveAbsensiGuru, saveJurnal, saveNilaiKelas, deleteItem, loginConfig = {}, saveLoginConfig }) {
+function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selectedKelas, setSelectedKelas, searchQuery, setSearchQuery, user, canAccess, saveAbsensiSiswa, saveAbsensiGuru, saveJurnal, saveNilaiKelas, deleteItem, loginConfig = {}, saveLoginConfig, writeDoc }) {
 
   const todayStr = today();
 
@@ -2991,12 +2991,21 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     const saveGuru = () => {
       if (!formData.newGuruNip || !formData.newGuruNama) { alert("NIP dan Nama wajib diisi!"); return; }
       if (formData.editGuruId) {
-        const updated = { ...data.teachers.find(t => t.id === formData.editGuruId), nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus };
-        patchData("teachers", data.teachers.map(t => t.id === formData.editGuruId ? updated : t));
+        const editId = formData.editGuruId;
+        const updated = { ...data.teachers.find(t => t.id === editId), nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus };
+        setData(d => {
+          const next = { ...d, teachers: d.teachers.map(t => t.id === editId ? updated : t) };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("teachers", updated);
       } else {
         const rec = { id: genId(), nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus || "Aktif" };
-        patchData("teachers", [...data.teachers, rec]);
+        setData(d => {
+          const next = { ...d, teachers: [...d.teachers, rec] };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("teachers", rec);
       }
       patchForm({ showGuruDialog: false });
@@ -3096,12 +3105,26 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     const saveLink = () => {
       if (!formData.newLinkTitle) { alert("Judul link wajib diisi!"); return; }
       if (formData.editLinkId) {
-        const updated = { ...data.quickLinks.find(l => l.id === formData.editLinkId), title: formData.newLinkTitle, url: formData.newLinkUrl, icon: formData.newLinkIcon };
-        patchData("quickLinks", data.quickLinks.map(l => l.id === formData.editLinkId ? updated : l));
+        const editId = formData.editLinkId;
+        const updated = {
+          ...data.quickLinks.find(l => l.id === editId),
+          title: formData.newLinkTitle,
+          url:   formData.newLinkUrl || "#",
+          icon:  formData.newLinkIcon || "🔗"
+        };
+        setData(d => {
+          const next = { ...d, quickLinks: d.quickLinks.map(l => l.id === editId ? updated : l) };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("quickLinks", updated);
       } else {
         const rec = { id: genId(), title: formData.newLinkTitle, url: formData.newLinkUrl || "#", icon: formData.newLinkIcon || "🔗" };
-        patchData("quickLinks", [...data.quickLinks, rec]);
+        setData(d => {
+          const next = { ...d, quickLinks: [...d.quickLinks, rec] };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("quickLinks", rec);
       }
       patchForm({ showLinkDialog: false });
@@ -3111,12 +3134,21 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     const saveAnn = () => {
       if (!formData.newAnnJudul) { alert("Judul pengumuman wajib diisi!"); return; }
       if (formData.editAnnId) {
-        const updated = { ...data.announcements.find(a => a.id === formData.editAnnId), judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi, icon: formData.newAnnIcon };
-        patchData("announcements", data.announcements.map(a => a.id === formData.editAnnId ? updated : a));
+        const editId = formData.editAnnId;
+        const updated = { ...data.announcements.find(a => a.id === editId), judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi || "", icon: formData.newAnnIcon || "📢" };
+        setData(d => {
+          const next = { ...d, announcements: d.announcements.map(a => a.id === editId ? updated : a) };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("announcements", updated);
       } else {
         const rec = { id: genId(), judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi || "", icon: formData.newAnnIcon || "📢" };
-        patchData("announcements", [...data.announcements, rec]);
+        setData(d => {
+          const next = { ...d, announcements: [...d.announcements, rec] };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("announcements", rec);
       }
       patchForm({ showAnnDialog: false });
@@ -3384,12 +3416,21 @@ function PortalGuru({ menu, data, patchData, formData, patchForm, selectedKelas,
     const saveMapel = () => {
       if (!formData.newMapelNama) { alert("Nama mapel wajib diisi!"); return; }
       if (formData.editMapelId) {
-        const updated = { ...data.subjects.find(s => s.id === formData.editMapelId), name: formData.newMapelNama };
-        patchData("subjects", data.subjects.map(s => s.id === formData.editMapelId ? updated : s));
+        const editId = formData.editMapelId;
+        const updated = { ...data.subjects.find(s => s.id === editId), name: formData.newMapelNama };
+        setData(d => {
+          const next = { ...d, subjects: d.subjects.map(s => s.id === editId ? updated : s) };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("subjects", updated);
       } else {
         const rec = { id: genId(), name: formData.newMapelNama };
-        patchData("subjects", [...data.subjects, rec]);
+        setData(d => {
+          const next = { ...d, subjects: [...d.subjects, rec] };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("subjects", rec);
       }
       patchForm({ showMapelDialog: false });
@@ -4054,12 +4095,21 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
         alert("NIS, Nama, dan Kelas wajib diisi!"); return;
       }
       if (formData.editSiswaId) {
-        const updated = { ...data.students.find(s => s.id === formData.editSiswaId), nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas };
-        patchData("students", data.students.map(s => s.id === formData.editSiswaId ? updated : s));
+        const editId = formData.editSiswaId;
+        const updated = { ...data.students.find(s => s.id === editId), nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas };
+        setData(d => {
+          const next = { ...d, students: d.students.map(s => s.id === editId ? updated : s) };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("students", updated);
       } else {
         const rec = { id: genId(), nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas };
-        patchData("students", [...data.students, rec]);
+        setData(d => {
+          const next = { ...d, students: [...d.students, rec] };
+          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          return next;
+        });
         writeDoc("students", rec);
       }
       patchForm({ showSiswaDialog: false });
