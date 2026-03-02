@@ -1548,12 +1548,25 @@ function App() {
   };
 
   const saveTarget = () => {
+    if (!formData.tr_kelas || !formData.tr_siswa || !formData.tr_mapel || !formData.tr_hasil) {
+      alert("⚠️ Kelas, Siswa, Mata Pelajaran, dan Hasil wajib diisi!"); return;
+    }
     const s = data.students.find(s => s.id === formData.tr_siswa);
-    if (!s || !formData.tr_mapel) { alert("⚠️ Lengkapi data target!"); return; }
-    const rec = { id: genId(), studentId: s.id, tanggal: today(), kelas: s.class_name, mataPelajaran: formData.tr_mapel, progressSaatIni: parseInt(formData.tr_progress) || 0, progressTotal: parseInt(formData.tr_total) || 100, satuan: formData.tr_satuan || "", hasil: formData.tr_hasil || "Lulus", catatan: formData.tr_catatan || "" };
+    const rec = {
+      id: genId(),
+      studentId: formData.tr_siswa,
+      tanggal: today(),
+      kelas: s?.class_name || formData.tr_kelas,
+      mataPelajaran: formData.tr_mapel,
+      progressSaatIni: parseInt(formData.tr_progress_val) || 0,
+      progressTotal: parseInt(formData.tr_progress_total) || 100,
+      satuan: formData.tr_satuan || "",
+      hasil: formData.tr_hasil,
+      catatan: formData.tr_catatan || ""
+    };
     setData(d => { const next = { ...d, targets: [...d.targets, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDoc("targets", rec);
-    patchForm({ tr_mapel: "", tr_progress: "", tr_total: "", tr_satuan: "", tr_catatan: "" });
+    patchForm({ tr_siswa: "", tr_mapel: "", tr_progress_val: "", tr_progress_total: "", tr_satuan: "", tr_hasil: "", tr_catatan: "" });
     alert("✅ Target berhasil disimpan!");
   };
 
@@ -1858,7 +1871,7 @@ function App() {
           <PortalGuru menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} writeDoc={writeDoc} />
         )}
         {portal === "siswa" && (
-          <PortalSiswa menu={menu} data={data} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
+          <PortalSiswa menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
         )}
         {portal === "wali" && (
           <PortalWali menu={menu} data={data} formData={formData} patchForm={patchForm} user={user} />
@@ -3476,7 +3489,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
 
 // ─── PORTAL SISWA ─────────────────────────────────────────────────────────────
-function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAccess, saveHarian, saveKegiatan, saveKegiatanKelas, saveTarget, saveZiyadah, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
+function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user, canAccess, saveHarian, saveKegiatan, saveKegiatanKelas, saveTarget, saveZiyadah, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
   const todayStr = today();
 
   if (menu === "dashboard") {
@@ -3803,29 +3816,6 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
   }
 
   if (menu === "target") {
-    const doSaveTarget = () => {
-      if (!formData.tr_kelas || !formData.tr_siswa || !formData.tr_mapel || !formData.tr_hasil) {
-        alert("Kelas, Siswa, Mata Pelajaran, dan Hasil wajib diisi!"); return;
-      }
-      const s = data.students.find(s => s.id === formData.tr_siswa);
-      const rec = {
-        id: genId(),
-        studentId: formData.tr_siswa,
-        tanggal: today(),
-        kelas: s?.class_name || formData.tr_kelas,
-        mataPelajaran: formData.tr_mapel,
-        progressSaatIni: parseInt(formData.tr_progress_val) || 0,
-        progressTotal: parseInt(formData.tr_progress_total) || 100,
-        satuan: formData.tr_satuan || "",
-        hasil: formData.tr_hasil,
-        catatan: formData.tr_catatan || ""
-      };
-      setData(d => { const next = { ...d, targets: [...d.targets, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
-      writeDoc && writeDoc("targets", rec);
-      patchForm({ tr_siswa: "", tr_mapel: "", tr_progress_val: "", tr_progress_total: "", tr_satuan: "", tr_hasil: "", tr_catatan: "" });
-      alert("✅ Target berhasil disimpan!");
-    };
-
     return (
       <div>
         {/* Form Input */}
@@ -3929,7 +3919,7 @@ function PortalSiswa({ menu, data, patchData, formData, patchForm, user, canAcce
 
             <button
               className="btn btn-blue"
-              onClick={doSaveTarget}
+              onClick={saveTarget}
               disabled={!formData.tr_kelas || !formData.tr_siswa || !formData.tr_mapel || !formData.tr_hasil}
             >
               <Icon.Save /> Simpan Target
