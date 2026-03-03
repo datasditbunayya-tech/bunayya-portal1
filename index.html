@@ -908,9 +908,9 @@ const MOCK_SURAHS = [
 ];
 
 const MOCK_QUICKLINKS = [
-  { id: "l1", title: "E-Learning",       url: "https://script.google.com/a/macros/admin.paud.belajar.id/s/AKfycbxXADFTW-6LkMMoi4X4k681iBwbpR-Bd5hVQLVO_rS1p9g6XtC8LfCoBezJQAGvGdM94Q/exec", icon: "📚", color: "#e8f5e9" },
-  { id: "l2", title: "Google Classroom", url: "https://bunayya.my.canva.site/ramadhancore", icon: "🖥️", color: "#e3f2fd" },
-  { id: "l3", title: "PPDB Online",      url: "https://script.google.com/a/macros/admin.paud.belajar.id/s/AKfycbxXADFTW-6LkMMoi4X4k681iBwbpR-Bd5hVQLVO_rS1p9g6XtC8LfCoBezJQAGvGdM94Q/exec", icon: "📝", color: "#fce4ec" },
+  { id: "l1", title: "PPDB TK-SDIT",      url: "https://script.google.com/a/macros/admin.paud.belajar.id/s/AKfycbxXADFTW-6LkMMoi4X4k681iBwbpR-Bd5hVQLVO_rS1p9g6XtC8LfCoBezJQAGvGdM94Q/exec", icon: "🏫", color: "#e8f5e9" },
+  { id: "l2", title: "Ramadhan Core",      url: "https://bunayya.my.canva.site/ramadhancore", icon: "🌙", color: "#e3f2fd" },
+  { id: "l3", title: "Facebook Bunayya",   url: "https://script.google.com/a/macros/admin.paud.belajar.id/s/AKfycbxXADFTW-6LkMMoi4X4k681iBwbpR-Bd5hVQLVO_rS1p9g6XtC8LfCoBezJQAGvGdM94Q/exec", icon: "👍", color: "#fce4ec" },
 ];
 
 const MOCK_ANNOUNCEMENTS = [
@@ -1225,6 +1225,19 @@ function App() {
             const batch = db.batch();
             MOCK_QUICKLINKS.forEach(l => batch.set(db.collection("quickLinks").doc(String(l.id)), l));
             batch.commit().catch(e => console.error("Seed quickLinks error:", e));
+          }
+          // Force-update link l1/l2/l3 jika masih pakai nama lama
+          if (fbColl === "quickLinks" && docs.length > 0) {
+            const oldTitles = { l1: "E-Learning", l2: "Google Classroom", l3: "PPDB Online" };
+            const updates = MOCK_QUICKLINKS.filter(ml => {
+              const existing = docs.find(d => d.id === ml.id);
+              return existing && oldTitles[ml.id] && existing.title === oldTitles[ml.id];
+            });
+            if (updates.length > 0) {
+              const batch = db.batch();
+              updates.forEach(l => batch.set(db.collection("quickLinks").doc(String(l.id)), l));
+              batch.commit().catch(e => console.error("Update quickLinks error:", e));
+            }
           }
           if (docs.length === 0 && fbColl === "announcements") {
             const batch = db.batch();
@@ -3166,7 +3179,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
       }
       patchForm({ showAnnDialog: false });
     };
-    const ICON_OPTS = ["🔗","📋","💰","❤️","📢","🏫","📖","🎓","✏️","🗓️","📌","⭐","🔔","📣","📝","🏆"];
+    const ICON_OPTS = ["🔗","📋","💰","❤️","📢","🏫","📖","🎓","✏️","🗓️","📌","⭐","🔔","📣","📝","🏆","🌙","👍","🕌","🌟","📱","💻","🎯","🌿"];
     return (
       <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
         {/* Link Cepat */}
