@@ -910,7 +910,7 @@ const MOCK_SURAHS = [
 const MOCK_QUICKLINKS = [
   { id: "l1", title: "PPDB TK-SDIT",      url: "https://script.google.com/a/macros/admin.paud.belajar.id/s/AKfycbxXADFTW-6LkMMoi4X4k681iBwbpR-Bd5hVQLVO_rS1p9g6XtC8LfCoBezJQAGvGdM94Q/exec", icon: "🏫", color: "#e8f5e9" },
   { id: "l2", title: "Ramadhan Core",      url: "https://bunayya.my.canva.site/ramadhancore", icon: "🌙", color: "#e3f2fd" },
-  { id: "l3", title: "Facebook Bunayya",   url: "https://script.google.com/a/macros/admin.paud.belajar.id/s/AKfycbxXADFTW-6LkMMoi4X4k681iBwbpR-Bd5hVQLVO_rS1p9g6XtC8LfCoBezJQAGvGdM94Q/exec", icon: "👍", color: "#fce4ec" },
+  { id: "l3", title: "Facebook Bunayya",   url: "https://www.facebook.com/bunayyaislamicschool", icon: "👍", color: "#fce4ec" },
 ];
 
 const MOCK_ANNOUNCEMENTS = [
@@ -1226,12 +1226,16 @@ function App() {
             MOCK_QUICKLINKS.forEach(l => batch.set(db.collection("quickLinks").doc(String(l.id)), l));
             batch.commit().catch(e => console.error("Seed quickLinks error:", e));
           }
-          // Force-update link l1/l2/l3 jika masih pakai nama lama
+          // Force-update link l1/l2/l3 jika masih pakai nama/url lama
           if (fbColl === "quickLinks" && docs.length > 0) {
             const oldTitles = { l1: "E-Learning", l2: "Google Classroom", l3: "PPDB Online" };
+            const oldUrls   = { l3: "https://script.google.com/a/macros/admin.paud.belajar.id/s/AKfycbxXADFTW-6LkMMoi4X4k681iBwbpR-Bd5hVQLVO_rS1p9g6XtC8LfCoBezJQAGvGdM94Q/exec" };
             const updates = MOCK_QUICKLINKS.filter(ml => {
               const existing = docs.find(d => d.id === ml.id);
-              return existing && oldTitles[ml.id] && existing.title === oldTitles[ml.id];
+              return existing && (
+                (oldTitles[ml.id] && existing.title === oldTitles[ml.id]) ||
+                (oldUrls[ml.id]   && existing.url   === oldUrls[ml.id])
+              );
             });
             if (updates.length > 0) {
               const batch = db.batch();
