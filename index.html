@@ -4,6 +4,155 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Portal Pendidikan – Bunayya Islamic School</title>
+
+  <!-- ══════════════════════════════════════════
+       PWA – META TAGS & MANIFEST
+  ══════════════════════════════════════════ -->
+  <meta name="theme-color" content="#1d7a5f" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Bunayya Portal" />
+  <meta name="application-name" content="Bunayya Portal" />
+  <meta name="description" content="Portal Pendidikan Bunayya Islamic School – Guru, Siswa, Wali Murid" />
+
+  <!-- Inline Web App Manifest -->
+  <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Portal+Pendidikan+Bunayya+Islamic+School%22%2C%22short_name%22%3A%22Bunayya+Portal%22%2C%22description%22%3A%22Portal+Pendidikan+Bunayya+Islamic+School%22%2C%22start_url%22%3A%22.%2F%22%2C%22display%22%3A%22standalone%22%2C%22orientation%22%3A%22portrait%22%2C%22theme_color%22%3A%22%231d7a5f%22%2C%22background_color%22%3A%22%23f0ede8%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdmlld0JveD0iMCAwIDE5MiAxOTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSIzMiIgZmlsbD0iIzFkN2E1ZiIvPjx0ZXh0IHg9Ijk2IiB5PSIxMjAiIGZvbnQtc2l6ZT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSJ3aGl0ZSI%2B8J%2BPuTwvdGV4dD48L3N2Zz4%3D%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any+maskable%22%7D%2C%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSI4MCIgZmlsbD0iIzFkN2E1ZiIvPjx0ZXh0IHg9IjI1NiIgeT0iMzIwIiBmb250LXNpemU9IjI4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPvCfj7k8L3RleHQ%2BPC9zdmc%2B%22%2C%22sizes%22%3A%22512x512%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%2C%22purpose%22%3A%22any+maskable%22%7D%5D%7D" />
+
+  <!-- Apple Touch Icon (SVG inline) -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgdmlld0JveD0iMCAwIDE4MCAxODAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjE4MCIgaGVpZ2h0PSIxODAiIHJ4PSIzMiIgZmlsbD0iIzFkN2E1ZiIvPjx0ZXh0IHg9IjkwIiB5PSIxMTUiIGZvbnQtc2l6ZT0iOTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IndoaXRlIj7wn4+5PC90ZXh0Pjwvc3ZnPg==" />
+
+  <!-- PWA – SERVICE WORKER REGISTRATION & INSTALL PROMPT -->
+  <script>
+    // ── Service Worker ──────────────────────────
+    const SW_VERSION = 'bunayya-v1';
+    const SW_BLOB = `
+const CACHE = '${SW_VERSION}';
+const OFFLINE_ASSETS = [
+  self.location.pathname + (self.location.search || '')
+];
+
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll(OFFLINE_ASSETS)).then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  // Network-first for Firebase & CDN, Cache-first for the app shell
+  const url = new URL(e.request.url);
+  const isExternal = url.origin !== self.location.origin;
+  if (isExternal) {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match(e.request))
+    );
+  } else {
+    e.respondWith(
+      caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return res;
+      }))
+    );
+  }
+});
+`;
+
+    if ('serviceWorker' in navigator) {
+      const swBlob = new Blob([SW_BLOB], { type: 'application/javascript' });
+      const swUrl  = URL.createObjectURL(swBlob);
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register(swUrl).then(reg => {
+          console.log('✅ Service Worker terdaftar:', reg.scope);
+        }).catch(err => console.warn('SW gagal:', err));
+      });
+    }
+
+    // ── Install Prompt ──────────────────────────
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const banner = document.getElementById('pwa-install-banner');
+      if (banner) banner.style.display = 'flex';
+    });
+    window.addEventListener('appinstalled', () => {
+      const banner = document.getElementById('pwa-install-banner');
+      if (banner) banner.style.display = 'none';
+      deferredPrompt = null;
+      console.log('✅ PWA berhasil diinstall!');
+    });
+    function pwaInstall() {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(choice => {
+        if (choice.outcome === 'accepted') console.log('User menerima install PWA');
+        deferredPrompt = null;
+        const banner = document.getElementById('pwa-install-banner');
+        if (banner) banner.style.display = 'none';
+      });
+    }
+    function pwaDismiss() {
+      const banner = document.getElementById('pwa-install-banner');
+      if (banner) banner.style.display = 'none';
+    }
+  </script>
+
+  <!-- PWA Install Banner Style -->
+  <style>
+    #pwa-install-banner {
+      display: none;
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      background: linear-gradient(135deg, #135544, #1d7a5f);
+      color: white;
+      border-radius: 16px;
+      padding: 14px 20px;
+      gap: 14px;
+      align-items: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      max-width: 420px;
+      width: calc(100% - 40px);
+      animation: pwa-slide-up 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes pwa-slide-up {
+      from { opacity: 0; transform: translateX(-50%) translateY(30px); }
+      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    #pwa-install-banner .pwa-icon {
+      font-size: 32px; flex-shrink: 0;
+    }
+    #pwa-install-banner .pwa-text { flex: 1; }
+    #pwa-install-banner .pwa-text strong { display: block; font-size: 14px; font-weight: 700; }
+    #pwa-install-banner .pwa-text span { font-size: 12px; opacity: 0.8; }
+    #pwa-install-banner .pwa-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    #pwa-install-banner .btn-pwa-install {
+      background: white; color: #1d7a5f;
+      border: none; border-radius: 8px;
+      padding: 8px 16px; font-size: 13px; font-weight: 700;
+      cursor: pointer; white-space: nowrap;
+    }
+    #pwa-install-banner .btn-pwa-install:hover { background: #ecfdf5; }
+    #pwa-install-banner .btn-pwa-dismiss {
+      background: rgba(255,255,255,0.15); color: white;
+      border: 1px solid rgba(255,255,255,0.3); border-radius: 8px;
+      padding: 8px 12px; font-size: 12px; cursor: pointer;
+    }
+    #pwa-install-banner .btn-pwa-dismiss:hover { background: rgba(255,255,255,0.25); }
+  </style>
+
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="document.getElementById('app-loading').innerHTML='<div style=padding:40px;text-align:center><h3 style=color:#991b1b>Gagal memuat halaman</h3><p>Periksa koneksi internet lalu refresh.</p><button onclick=location.reload() style=padding:10px 20px;background:#065f46;color:white;border:none;border-radius:8px;cursor:pointer>Refresh</button></div>'"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -4611,5 +4760,18 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
     var loadEl = document.getElementById("app-loading");
     if (loadEl) loadEl.style.display = "none";
   </script>
+
+  <!-- PWA Install Banner -->
+  <div id="pwa-install-banner" role="banner" aria-label="Install aplikasi">
+    <div class="pwa-icon">🏫</div>
+    <div class="pwa-text">
+      <strong>Install Bunayya Portal</strong>
+      <span>Akses lebih cepat tanpa browser</span>
+    </div>
+    <div class="pwa-actions">
+      <button class="btn-pwa-install" onclick="pwaInstall()">Install</button>
+      <button class="btn-pwa-dismiss" onclick="pwaDismiss()">✕</button>
+    </div>
+  </div>
 </body>
 </html>
