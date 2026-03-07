@@ -3,7 +3,230 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Portal Pendidikan – Bunayya Islamic School</title>
+  <title>Bunayya SMILE Hub</title>
+
+  <!-- PWA Meta Tags -->
+  <meta name="application-name" content="Bunayya SMILE Hub" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Bunayya" />
+  <meta name="description" content="Portal Manajemen Pendidikan Bunayya Islamic School" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1d7a5f" />
+
+  <!-- PWA: Manifest + Service Worker + Tombol Install Otomatis -->
+  <script>
+  (function() {
+
+    // ── 1. BUAT ICON EMOJI via Canvas (tidak perlu file/URL eksternal) ────────
+    function makeEmojiIcon(size, emoji, bgColor) {
+      const c = document.createElement("canvas");
+      c.width = c.height = size;
+      const ctx = c.getContext("2d");
+      // Background bulat
+      ctx.fillStyle = bgColor;
+      ctx.beginPath();
+      ctx.arc(size/2, size/2, size/2, 0, Math.PI*2);
+      ctx.fill();
+      // Emoji di tengah
+      ctx.font = Math.round(size * 0.55) + "px serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(emoji, size/2, size/2 + size*0.04);
+      return c.toDataURL("image/png");
+    }
+
+    const EMOJI  = "🕌";
+    const BG     = "#1d7a5f";
+    const icon192 = makeEmojiIcon(192, EMOJI, BG);
+    const icon512 = makeEmojiIcon(512, EMOJI, BG);
+
+    // ── 2. MANIFEST ───────────────────────────────────────────────────────────
+    const manifest = {
+      name: "Bunayya SMILE Hub",
+      short_name: "Bunayya",
+      description: "Portal Manajemen Pendidikan Bunayya Islamic School",
+      start_url: "./",
+      display: "standalone",
+      background_color: "#1d7a5f",
+      theme_color: "#1d7a5f",
+      orientation: "portrait-primary",
+      icons: [
+        { src: icon192, sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: icon512, sizes: "512x512", type: "image/png", purpose: "maskable" }
+      ]
+    };
+    const mBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+    const mLink = document.createElement("link");
+    mLink.rel  = "manifest";
+    mLink.href = URL.createObjectURL(mBlob);
+    document.currentScript.parentNode.appendChild(mLink);
+
+    // Apple touch icon
+    const aLink = document.createElement("link");
+    aLink.rel  = "apple-touch-icon";
+    aLink.href = icon192;
+    document.currentScript.parentNode.appendChild(aLink);
+
+    // ── 3. SERVICE WORKER ─────────────────────────────────────────────────────
+    if ("serviceWorker" in navigator) {
+      const sw = `
+        const CACHE = "bny-v1";
+        self.addEventListener("install",  e => { self.skipWaiting(); });
+        self.addEventListener("activate", e => {
+          e.waitUntil(caches.keys().then(ks =>
+            Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))
+          ));
+          self.clients.claim();
+        });
+        self.addEventListener("fetch", e => {
+          if (e.request.mode === "navigate") {
+            e.respondWith(fetch(e.request).catch(() => caches.match(e.request) || new Response("")));
+          }
+        });
+      `;
+      const swBlob = new Blob([sw], { type: "text/javascript" });
+      navigator.serviceWorker.register(URL.createObjectURL(swBlob), { scope: "./" })
+        .then(r => console.log("✅ SW:", r.scope))
+        .catch(e => console.warn("SW:", e));
+    }
+
+    // ── 4. INSTALL BUTTON ─────────────────────────────────────────────────────
+    let _prompt = null;
+
+    // Tombol FAB — selalu muncul (kecuali sudah standalone/terinstall)
+    function showFAB() {
+      if (document.getElementById("_pwa_fab")) return;
+      if (window.matchMedia("(display-mode:standalone)").matches) return;
+      if (navigator.standalone) return;
+
+      const fab = document.createElement("button");
+      fab.id = "_pwa_fab";
+      fab.textContent = "📲 Pasang di HP";
+      fab.style.cssText = [
+        "position:fixed;bottom:24px;right:18px;z-index:99999;",
+        "background:linear-gradient(135deg,#1d7a5f,#28a87e);",
+        "color:#fff;border:none;border-radius:50px;",
+        "padding:13px 22px;font-size:14px;font-weight:800;",
+        "cursor:pointer;font-family:sans-serif;",
+        "box-shadow:0 4px 20px rgba(29,122,95,.55);",
+        "animation:_pwa_pulse 2.5s ease-in-out infinite;"
+      ].join("");
+      fab.onclick = doInstall;
+      document.body.appendChild(fab);
+    }
+
+    // Banner muncul saat beforeinstallprompt siap
+    function showBanner() {
+      if (document.getElementById("_pwa_banner")) return;
+      const el = document.createElement("div");
+      el.id = "_pwa_banner";
+      el.style.cssText = "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:99998;width:calc(100% - 32px);max-width:360px;";
+      el.innerHTML = `
+        <div style="background:linear-gradient(135deg,#1d7a5f,#28a87e);color:#fff;
+          padding:14px 16px;border-radius:18px;box-shadow:0 8px 32px rgba(0,0,0,.3);
+          display:flex;align-items:center;gap:12px;font-family:sans-serif;">
+          <span style="font-size:32px;flex-shrink:0;">🕌</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:800;font-size:14px;">Bunayya SMILE Hub</div>
+            <div style="font-size:11px;opacity:.85;margin-top:2px;">Pasang di layar utama HP Anda</div>
+          </div>
+          <button id="_pwa_b_ok" style="background:#fff;color:#1d7a5f;border:none;
+            padding:10px 16px;border-radius:10px;font-weight:800;font-size:13px;
+            cursor:pointer;font-family:sans-serif;flex-shrink:0;">Pasang</button>
+          <button id="_pwa_b_x" style="background:rgba(255,255,255,.2);color:#fff;border:none;
+            width:30px;height:30px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0;">×</button>
+        </div>`;
+      document.body.appendChild(el);
+      document.getElementById("_pwa_b_ok").onclick = doInstall;
+      document.getElementById("_pwa_b_x").onclick  = () => el.remove();
+    }
+
+    function doInstall() {
+      if (_prompt) {
+        _prompt.prompt();
+        _prompt.userChoice.then(r => {
+          if (r.outcome === "accepted") removeInstallUI();
+          _prompt = null;
+        });
+      } else {
+        showManualGuide();
+      }
+    }
+
+    function removeInstallUI() {
+      ["_pwa_fab","_pwa_banner","_pwa_guide"].forEach(id => {
+        const el = document.getElementById(id); if (el) el.remove();
+      });
+      localStorage.setItem("bny_installed","1");
+    }
+
+    function showManualGuide() {
+      if (document.getElementById("_pwa_guide")) return;
+      const isIOS     = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      const isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
+      const steps = isIOS
+        ? ["1️⃣ Ketuk ikon <b>Bagikan ↑</b> di bawah Safari","2️⃣ Pilih <b>Tambahkan ke Layar Utama</b>","3️⃣ Ketuk <b>Tambahkan</b> ✅"]
+        : isSamsung
+        ? ["1️⃣ Ketuk <b>⋮ Menu</b> kanan atas","2️⃣ Pilih <b>Tambahkan halaman ke</b>","3️⃣ Pilih <b>Layar Utama</b>","4️⃣ Pilih <b>Tambah sebagai pintasan</b> ✅"]
+        : ["1️⃣ Ketuk <b>⋮ Menu</b> kanan atas Chrome","2️⃣ Pilih <b>Tambahkan ke layar utama</b>","3️⃣ Ketuk <b>Tambahkan</b> ✅"];
+      const g = document.createElement("div");
+      g.id = "_pwa_guide";
+      g.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999999;display:flex;align-items:flex-end;justify-content:center;";
+      g.innerHTML = `
+        <div style="background:#fff;border-radius:24px 24px 0 0;padding:28px 24px 40px;
+          width:100%;max-width:480px;font-family:sans-serif;">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+            <span style="font-size:40px;">🕌</span>
+            <div style="flex:1;">
+              <div style="font-weight:800;font-size:17px;">Cara Pasang Aplikasi</div>
+              <div style="font-size:12px;color:#888;">Bunayya SMILE Hub</div>
+            </div>
+            <button id="_pwa_g_x" style="background:#f3f4f6;border:none;width:34px;height:34px;
+              border-radius:50%;font-size:18px;cursor:pointer;">×</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            ${steps.map(s => `<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;
+              border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.6;">${s}</div>`).join("")}
+          </div>
+          <div style="margin-top:16px;padding:12px;background:#fef9c3;border-radius:12px;
+            font-size:12px;color:#78350f;">
+            💡 Gunakan <b>Google Chrome</b> di Android untuk install otomatis
+          </div>
+        </div>`;
+      document.body.appendChild(g);
+      document.getElementById("_pwa_g_x").onclick = () => g.remove();
+      g.onclick = e => { if (e.target === g) g.remove(); };
+    }
+
+    // Event listeners
+    window.addEventListener("beforeinstallprompt", e => {
+      e.preventDefault();
+      _prompt = e;
+      showBanner();
+      // Update FAB jadi aktif
+      const fab = document.getElementById("_pwa_fab");
+      if (fab) fab.onclick = doInstall;
+    });
+
+    window.addEventListener("appinstalled", () => {
+      removeInstallUI();
+      console.log("✅ PWA installed!");
+    });
+
+    // Tampilkan FAB setelah halaman load
+    window.addEventListener("load", () => {
+      setTimeout(showFAB, 1000);
+    });
+
+  })();
+  </script>
+  <style>
+    @keyframes _pwa_pulse {
+      0%,100% { box-shadow: 0 4px 20px rgba(29,122,95,.55); transform: scale(1); }
+      50%      { box-shadow: 0 4px 32px rgba(29,122,95,.8), 0 0 0 8px rgba(29,122,95,.15); transform: scale(1.04); }
+    }
+  </style>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="document.getElementById('app-loading').innerHTML='<div style=padding:40px;text-align:center><h3 style=color:#991b1b>Gagal memuat halaman</h3><p>Periksa koneksi internet lalu refresh.</p><button onclick=location.reload() style=padding:10px 20px;background:#065f46;color:white;border:none;border-radius:8px;cursor:pointer>Refresh</button></div>'"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -2572,10 +2795,59 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
   // Jurnal Mengajar
   if (menu === "jurnal") {
-    const genKegiatan = (topik, mapel) =>
-      `1. Pembukaan dengan doa dan salam\n2. Penjelasan materi "${topik}"\n3. Praktik langsung oleh siswa\n4. Evaluasi dan tanya jawab\n5. Penutup dan pemberian tugas`;
-    const genCatatan = (topik) =>
-      `Siswa antusias mengikuti pembelajaran ${topik}.\nPerlu ditingkatkan praktik mandiri di rumah.`;
+    const genKegiatan = (topik, mapel) => {
+      const sets = [
+        [
+          `1. Pembukaan dengan doa bersama dan apersepsi materi "${topik}"`,
+          `2. Guru menjelaskan konsep dasar ${topik} secara interaktif`,
+          `3. Siswa mengerjakan latihan mandiri tentang ${topik}`,
+          `4. Diskusi kelompok dan presentasi hasil belajar`,
+          `5. Penutup: refleksi, kesimpulan, dan pemberian tugas rumah`
+        ],
+        [
+          `1. Salam pembuka, doa, dan review materi ${mapel || "sebelumnya"}`,
+          `2. Penyampaian tujuan pembelajaran topik "${topik}"`,
+          `3. Demonstrasi dan tanya jawab langsung bersama siswa`,
+          `4. Siswa mempraktikkan secara berpasangan atau berkelompok`,
+          `5. Evaluasi lisan dan penutup dengan motivasi belajar`
+        ],
+        [
+          `1. Ice breaking dan motivasi awal sebelum masuk materi`,
+          `2. Pengantar topik "${topik}" dengan media visual/gambar`,
+          `3. Penjelasan bertahap disertai contoh nyata dalam kehidupan`,
+          `4. Kuis singkat untuk mengukur pemahaman siswa`,
+          `5. Penutup: doa, pengumuman tugas, dan salam`
+        ],
+        [
+          `1. Pembukaan: doa, absensi, dan cek kesiapan belajar`,
+          `2. Apersepsi: mengaitkan "${topik}" dengan pengalaman siswa`,
+          `3. Eksplorasi materi melalui diskusi dan tanya jawab aktif`,
+          `4. Penugasan tertulis/lisan sesuai indikator pembelajaran`,
+          `5. Simpulan bersama dan penguatan oleh guru, lalu salam penutup`
+        ],
+        [
+          `1. Berdoa, mengecek kehadiran, dan menyiapkan bahan ajar`,
+          `2. Stimulasi: guru memberikan pertanyaan pemantik tentang "${topik}"`,
+          `3. Siswa mengamati, membaca, atau mendengarkan penjelasan materi`,
+          `4. Latihan soal / praktik langsung sesuai topik ${topik}`,
+          `5. Feedback dari guru, koreksi bersama, dan penutup`
+        ],
+      ];
+      const pick = sets[Math.floor(Math.random() * sets.length)];
+      return pick.join("\n");
+    };
+
+    const genCatatan = (topik) => {
+      const notes = [
+        `Sebagian besar siswa memahami materi ${topik} dengan baik.\nPerlu pengulangan pada beberapa siswa yang masih kesulitan.`,
+        `Pembelajaran ${topik} berjalan kondusif dan antusias.\nBeberapa siswa perlu pendampingan lebih lanjut di rumah.`,
+        `Respon siswa terhadap topik ${topik} sangat positif.\nDisarankan latihan tambahan agar pemahaman semakin kuat.`,
+        `Materi ${topik} tersampaikan sesuai rencana pembelajaran.\nSiswa aktif bertanya dan berdiskusi selama kegiatan.`,
+        `Proses pembelajaran ${topik} berjalan efektif.\nPerlu tindak lanjut untuk siswa yang belum mencapai KKM.`,
+        `Siswa cukup antusias mengikuti materi ${topik} hari ini.\nAkan dilakukan remedial pada pertemuan berikutnya jika diperlukan.`,
+      ];
+      return notes[Math.floor(Math.random() * notes.length)];
+    };
     return (
       <div className="card">
         <div className="card-header"><div className="card-title">📝 Jurnal Mengajar</div></div>
@@ -2608,10 +2880,16 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
             </div>
             <div className="form-group" style={{ gridColumn: "span 2" }}>
               <label className="label">Topik ✨ Auto-isi kegiatan & catatan</label>
-              <input className="input" placeholder="Contoh: Surat Al-Fatihah, Perkalian 1-10..." value={formData.j_topik || ""} onChange={e => {
-                const topik = e.target.value;
-                patchForm({ j_topik: topik, j_kegiatan: topik ? genKegiatan(topik, formData.j_mapel) : "", j_catatan: topik ? genCatatan(topik) : "" });
-              }} />
+              <div style={{ display:"flex", gap:8 }}>
+                <input className="input" placeholder="Contoh: Surat Al-Fatihah, Perkalian 1-10..." value={formData.j_topik || ""} onChange={e => {
+                  const topik = e.target.value;
+                  patchForm({ j_topik: topik, j_kegiatan: topik ? genKegiatan(topik, formData.j_mapel) : "", j_catatan: topik ? genCatatan(topik) : "" });
+                }} style={{ flex:1 }} />
+                {formData.j_topik && (
+                  <button type="button" title="Acak ulang isi" onClick={() => patchForm({ j_kegiatan: genKegiatan(formData.j_topik, formData.j_mapel), j_catatan: genCatatan(formData.j_topik) })}
+                    style={{ padding:"0 14px", fontSize:18, background:"#e8f5e9", border:"1.5px solid #a7f3d0", borderRadius:8, cursor:"pointer", whiteSpace:"nowrap" }}>🔀</button>
+                )}
+              </div>
             </div>
           </div>
           <div className="form-group">
@@ -2620,7 +2898,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
           </div>
           <div className="form-group">
             <label className="label">Catatan</label>
-            <textarea className="textarea" rows={3} value={formData.j_catatan || ""} onChange={e => patchForm({ j_catatan: e.target.value })} placeholder="Terisi otomatis dari topik..." />
+            <textarea className="textarea" rows={2} value={formData.j_catatan || ""} onChange={e => patchForm({ j_catatan: e.target.value })} placeholder="Terisi otomatis dari topik..." />
           </div>
           <div className="flex gap-2">
             <button className="btn btn-primary" onClick={saveJurnal} disabled={!formData.j_teacher || !formData.j_kelas || !formData.j_topik}><Icon.Save /> Simpan Jurnal</button>
