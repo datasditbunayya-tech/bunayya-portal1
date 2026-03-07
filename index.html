@@ -3,7 +3,120 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Portal Pendidikan – Bunayya Islamic School</title>
+  <title>Bunayya SMILE Hub</title>
+
+  <!-- PWA Meta Tags -->
+  <meta name="application-name" content="Bunayya SMILE Hub" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Bunayya" />
+  <meta name="description" content="Portal Manajemen Pendidikan Bunayya Islamic School" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#1d7a5f" />
+
+  <!-- PWA Manifest (inline via blob) -->
+  <script>
+    const manifest = {
+      name: "Bunayya SMILE Hub",
+      short_name: "Bunayya",
+      description: "Portal Manajemen Pendidikan Bunayya Islamic School",
+      start_url: "./",
+      display: "standalone",
+      background_color: "#f0fdf4",
+      theme_color: "#1d7a5f",
+      orientation: "portrait-primary",
+      icons: [
+        { src: "https://api.dicebear.com/7.x/initials/svg?seed=BS&backgroundColor=1d7a5f&textColor=ffffff&fontSize=40&size=192", sizes: "192x192", type: "image/svg+xml", purpose: "any maskable" },
+        { src: "https://api.dicebear.com/7.x/initials/svg?seed=BS&backgroundColor=1d7a5f&textColor=ffffff&fontSize=40&size=512", sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
+      ]
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+    const manifestURL = URL.createObjectURL(blob);
+    const link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = manifestURL;
+    document.currentScript.parentNode.appendChild(link);
+  </script>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        // Inline service worker via blob
+        const swCode = `
+          const CACHE = "bunayya-v1";
+          const OFFLINE = ["/"];
+          self.addEventListener("install", e => {
+            e.waitUntil(caches.open(CACHE).then(c => c.addAll(OFFLINE)));
+            self.skipWaiting();
+          });
+          self.addEventListener("activate", e => {
+            e.waitUntil(caches.keys().then(keys =>
+              Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+            ));
+            self.clients.claim();
+          });
+          self.addEventListener("fetch", e => {
+            if (e.request.mode === "navigate") {
+              e.respondWith(fetch(e.request).catch(() => caches.match("/")));
+            }
+          });
+        `;
+        const swBlob = new Blob([swCode], { type: "application/javascript" });
+        const swURL = URL.createObjectURL(swBlob);
+        navigator.serviceWorker.register(swURL).catch(() => {});
+      });
+    }
+
+    // Prompt install banner
+    let deferredPrompt;
+    window.addEventListener("beforeinstallprompt", e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // Tampilkan banner install setelah 3 detik
+      setTimeout(() => {
+        if (deferredPrompt && !localStorage.getItem("pwa_installed")) {
+          const banner = document.createElement("div");
+          banner.id = "pwa-banner";
+          banner.innerHTML = `
+            <div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+              background:#1d7a5f;color:white;padding:14px 20px;border-radius:16px;
+              box-shadow:0 4px 20px rgba(0,0,0,.25);display:flex;align-items:center;
+              gap:12px;z-index:99999;max-width:340px;width:calc(100% - 40px);font-family:sans-serif">
+              <span style="font-size:28px">🏫</span>
+              <div style="flex:1">
+                <div style="font-weight:700;font-size:14px">Install Bunayya SMILE Hub</div>
+                <div style="font-size:12px;opacity:.85">Tambahkan ke layar utama HP Anda</div>
+              </div>
+              <button id="pwa-install-btn" style="background:white;color:#1d7a5f;border:none;
+                padding:8px 14px;border-radius:10px;font-weight:700;cursor:pointer;font-size:13px">
+                Install
+              </button>
+              <button id="pwa-close-btn" style="background:transparent;color:white;border:none;
+                font-size:20px;cursor:pointer;padding:0 4px;line-height:1">×</button>
+            </div>`;
+          document.body.appendChild(banner);
+          document.getElementById("pwa-install-btn").onclick = () => {
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then(r => {
+              if (r.outcome === "accepted") localStorage.setItem("pwa_installed","1");
+              banner.remove();
+              deferredPrompt = null;
+            });
+          };
+          document.getElementById("pwa-close-btn").onclick = () => {
+            banner.remove();
+            localStorage.setItem("pwa_installed","1");
+          };
+        }
+      }, 3000);
+    });
+    window.addEventListener("appinstalled", () => {
+      localStorage.setItem("pwa_installed","1");
+      const b = document.getElementById("pwa-banner");
+      if (b) b.remove();
+    });
+  </script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="document.getElementById('app-loading').innerHTML='<div style=padding:40px;text-align:center><h3 style=color:#991b1b>Gagal memuat halaman</h3><p>Periksa koneksi internet lalu refresh.</p><button onclick=location.reload() style=padding:10px 20px;background:#065f46;color:white;border:none;border-radius:8px;cursor:pointer>Refresh</button></div>'"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -2572,10 +2685,59 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
   // Jurnal Mengajar
   if (menu === "jurnal") {
-    const genKegiatan = (topik, mapel) =>
-      `1. Pembukaan dengan doa dan salam\n2. Penjelasan materi "${topik}"\n3. Praktik langsung oleh siswa\n4. Evaluasi dan tanya jawab\n5. Penutup dan pemberian tugas`;
-    const genCatatan = (topik) =>
-      `Siswa antusias mengikuti pembelajaran ${topik}.\nPerlu ditingkatkan praktik mandiri di rumah.`;
+    const genKegiatan = (topik, mapel) => {
+      const sets = [
+        [
+          `1. Pembukaan dengan doa bersama dan apersepsi materi "${topik}"`,
+          `2. Guru menjelaskan konsep dasar ${topik} secara interaktif`,
+          `3. Siswa mengerjakan latihan mandiri tentang ${topik}`,
+          `4. Diskusi kelompok dan presentasi hasil belajar`,
+          `5. Penutup: refleksi, kesimpulan, dan pemberian tugas rumah`
+        ],
+        [
+          `1. Salam pembuka, doa, dan review materi ${mapel || "sebelumnya"}`,
+          `2. Penyampaian tujuan pembelajaran topik "${topik}"`,
+          `3. Demonstrasi dan tanya jawab langsung bersama siswa`,
+          `4. Siswa mempraktikkan secara berpasangan atau berkelompok`,
+          `5. Evaluasi lisan dan penutup dengan motivasi belajar`
+        ],
+        [
+          `1. Ice breaking dan motivasi awal sebelum masuk materi`,
+          `2. Pengantar topik "${topik}" dengan media visual/gambar`,
+          `3. Penjelasan bertahap disertai contoh nyata dalam kehidupan`,
+          `4. Kuis singkat untuk mengukur pemahaman siswa`,
+          `5. Penutup: doa, pengumuman tugas, dan salam`
+        ],
+        [
+          `1. Pembukaan: doa, absensi, dan cek kesiapan belajar`,
+          `2. Apersepsi: mengaitkan "${topik}" dengan pengalaman siswa`,
+          `3. Eksplorasi materi melalui diskusi dan tanya jawab aktif`,
+          `4. Penugasan tertulis/lisan sesuai indikator pembelajaran`,
+          `5. Simpulan bersama dan penguatan oleh guru, lalu salam penutup`
+        ],
+        [
+          `1. Berdoa, mengecek kehadiran, dan menyiapkan bahan ajar`,
+          `2. Stimulasi: guru memberikan pertanyaan pemantik tentang "${topik}"`,
+          `3. Siswa mengamati, membaca, atau mendengarkan penjelasan materi`,
+          `4. Latihan soal / praktik langsung sesuai topik ${topik}`,
+          `5. Feedback dari guru, koreksi bersama, dan penutup`
+        ],
+      ];
+      const pick = sets[Math.floor(Math.random() * sets.length)];
+      return pick.join("\n");
+    };
+
+    const genCatatan = (topik) => {
+      const notes = [
+        `Sebagian besar siswa memahami materi ${topik} dengan baik.\nPerlu pengulangan pada beberapa siswa yang masih kesulitan.`,
+        `Pembelajaran ${topik} berjalan kondusif dan antusias.\nBeberapa siswa perlu pendampingan lebih lanjut di rumah.`,
+        `Respon siswa terhadap topik ${topik} sangat positif.\nDisarankan latihan tambahan agar pemahaman semakin kuat.`,
+        `Materi ${topik} tersampaikan sesuai rencana pembelajaran.\nSiswa aktif bertanya dan berdiskusi selama kegiatan.`,
+        `Proses pembelajaran ${topik} berjalan efektif.\nPerlu tindak lanjut untuk siswa yang belum mencapai KKM.`,
+        `Siswa cukup antusias mengikuti materi ${topik} hari ini.\nAkan dilakukan remedial pada pertemuan berikutnya jika diperlukan.`,
+      ];
+      return notes[Math.floor(Math.random() * notes.length)];
+    };
     return (
       <div className="card">
         <div className="card-header"><div className="card-title">📝 Jurnal Mengajar</div></div>
@@ -2608,10 +2770,16 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
             </div>
             <div className="form-group" style={{ gridColumn: "span 2" }}>
               <label className="label">Topik ✨ Auto-isi kegiatan & catatan</label>
-              <input className="input" placeholder="Contoh: Surat Al-Fatihah, Perkalian 1-10..." value={formData.j_topik || ""} onChange={e => {
-                const topik = e.target.value;
-                patchForm({ j_topik: topik, j_kegiatan: topik ? genKegiatan(topik, formData.j_mapel) : "", j_catatan: topik ? genCatatan(topik) : "" });
-              }} />
+              <div style={{ display:"flex", gap:8 }}>
+                <input className="input" placeholder="Contoh: Surat Al-Fatihah, Perkalian 1-10..." value={formData.j_topik || ""} onChange={e => {
+                  const topik = e.target.value;
+                  patchForm({ j_topik: topik, j_kegiatan: topik ? genKegiatan(topik, formData.j_mapel) : "", j_catatan: topik ? genCatatan(topik) : "" });
+                }} style={{ flex:1 }} />
+                {formData.j_topik && (
+                  <button type="button" title="Acak ulang isi" onClick={() => patchForm({ j_kegiatan: genKegiatan(formData.j_topik, formData.j_mapel), j_catatan: genCatatan(formData.j_topik) })}
+                    style={{ padding:"0 14px", fontSize:18, background:"#e8f5e9", border:"1.5px solid #a7f3d0", borderRadius:8, cursor:"pointer", whiteSpace:"nowrap" }}>🔀</button>
+                )}
+              </div>
             </div>
           </div>
           <div className="form-group">
@@ -2620,7 +2788,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
           </div>
           <div className="form-group">
             <label className="label">Catatan</label>
-            <textarea className="textarea" rows={3} value={formData.j_catatan || ""} onChange={e => patchForm({ j_catatan: e.target.value })} placeholder="Terisi otomatis dari topik..." />
+            <textarea className="textarea" rows={2} value={formData.j_catatan || ""} onChange={e => patchForm({ j_catatan: e.target.value })} placeholder="Terisi otomatis dari topik..." />
           </div>
           <div className="flex gap-2">
             <button className="btn btn-primary" onClick={saveJurnal} disabled={!formData.j_teacher || !formData.j_kelas || !formData.j_topik}><Icon.Save /> Simpan Jurnal</button>
