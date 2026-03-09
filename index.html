@@ -14,109 +14,212 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#1d7a5f" />
 
-  <!-- PWA Manifest (inline via blob) -->
+  <!-- PWA: Manifest + Service Worker + Install Otomatis -->
   <script>
-    const manifest = {
-      name: "Bunayya SMILE Hub",
-      short_name: "Bunayya",
-      description: "Portal Manajemen Pendidikan Bunayya Islamic School",
-      start_url: "./",
-      display: "standalone",
-      background_color: "#f0fdf4",
-      theme_color: "#1d7a5f",
-      orientation: "portrait-primary",
-      icons: [
-        { src: "https://api.dicebear.com/7.x/initials/svg?seed=BS&backgroundColor=1d7a5f&textColor=ffffff&fontSize=40&size=192", sizes: "192x192", type: "image/svg+xml", purpose: "any maskable" },
-        { src: "https://api.dicebear.com/7.x/initials/svg?seed=BS&backgroundColor=1d7a5f&textColor=ffffff&fontSize=40&size=512", sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
+  (function() {
+    // Jangan jalankan jika sudah standalone (sudah terinstall)
+    if (window.matchMedia("(display-mode:standalone)").matches || navigator.standalone) return;
+
+    /* ── ICON via Canvas ─────────────────────────────────────────────────── */
+    function makeIcon(size) {
+      var c = document.createElement("canvas");
+      c.width = c.height = size;
+      var ctx = c.getContext("2d");
+      ctx.fillStyle = "#1d7a5f";
+      ctx.beginPath(); ctx.arc(size/2,size/2,size/2,0,Math.PI*2); ctx.fill();
+      ctx.font = Math.round(size*0.52)+"px serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("🕌", size/2, size/2 + size*0.03);
+      return c.toDataURL("image/png");
+    }
+    var icon = makeIcon(512);
+
+    /* ── MANIFEST ────────────────────────────────────────────────────────── */
+    var manifest = {
+      name:"Bunayya SMILE Hub", short_name:"Bunayya",
+      description:"Portal Manajemen Pendidikan Bunayya Islamic School",
+      start_url: location.href,
+      display:"standalone",
+      background_color:"#1d7a5f", theme_color:"#1d7a5f",
+      orientation:"portrait-primary",
+      icons:[
+        {src:icon,sizes:"192x192",type:"image/png",purpose:"any"},
+        {src:icon,sizes:"512x512",type:"image/png",purpose:"maskable"}
       ]
     };
-    const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
-    const manifestURL = URL.createObjectURL(blob);
-    const link = document.createElement("link");
-    link.rel = "manifest";
-    link.href = manifestURL;
-    document.currentScript.parentNode.appendChild(link);
-  </script>
+    var mb = new Blob([JSON.stringify(manifest)],{type:"application/json"});
+    var ml = document.createElement("link"); ml.rel="manifest"; ml.href=URL.createObjectURL(mb);
+    document.head.appendChild(ml);
+    // Apple
+    var al = document.createElement("link"); al.rel="apple-touch-icon"; al.href=icon;
+    document.head.appendChild(al);
 
-  <!-- Service Worker Registration -->
-  <script>
+    /* ── SERVICE WORKER ──────────────────────────────────────────────────── */
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        // Inline service worker via blob
-        const swCode = `
-          const CACHE = "bunayya-v1";
-          const OFFLINE = ["/"];
-          self.addEventListener("install", e => {
-            e.waitUntil(caches.open(CACHE).then(c => c.addAll(OFFLINE)));
-            self.skipWaiting();
-          });
-          self.addEventListener("activate", e => {
-            e.waitUntil(caches.keys().then(keys =>
-              Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-            ));
-            self.clients.claim();
-          });
-          self.addEventListener("fetch", e => {
-            if (e.request.mode === "navigate") {
-              e.respondWith(fetch(e.request).catch(() => caches.match("/")));
-            }
-          });
-        `;
-        const swBlob = new Blob([swCode], { type: "application/javascript" });
-        const swURL = URL.createObjectURL(swBlob);
-        navigator.serviceWorker.register(swURL).catch(() => {});
+      var swCode = [
+        'const C="bny-v2";',
+        'self.addEventListener("install",function(e){self.skipWaiting();});',
+        'self.addEventListener("activate",function(e){',
+        '  e.waitUntil(caches.keys().then(function(ks){',
+        '    return Promise.all(ks.filter(function(k){return k!==C;}).map(function(k){return caches.delete(k);}));',
+        '  }));self.clients.claim();',
+        '});',
+        'self.addEventListener("fetch",function(e){',
+        '  if(e.request.mode==="navigate"){',
+        '    e.respondWith(fetch(e.request).catch(function(){return caches.match(e.request)||new Response("");}));',
+        '  }',
+        '});'
+      ].join("\n");
+      try {
+        var swBlob = new Blob([swCode],{type:"text/javascript"});
+        navigator.serviceWorker.register(URL.createObjectURL(swBlob),{scope:"./"})
+          .then(function(r){console.log("✅ SW ok:",r.scope);})
+          .catch(function(e){console.warn("SW:",e);});
+      } catch(e){console.warn("SW err:",e);}
+    }
+
+    /* ── STATE ───────────────────────────────────────────────────────────── */
+    var _prompt = null;
+    var _shown  = false;
+
+    /* ── UI HELPERS ──────────────────────────────────────────────────────── */
+    function removeAll() {
+      ["_pwa_overlay","_pwa_fab","_pwa_topbar"].forEach(function(id){
+        var el=document.getElementById(id); if(el)el.remove();
       });
     }
 
-    // Prompt install banner
-    let deferredPrompt;
-    window.addEventListener("beforeinstallprompt", e => {
+    // Overlay besar di tengah — muncul otomatis saat pertama buka
+    function showOverlay() {
+      if (document.getElementById("_pwa_overlay")) return;
+      var isIOS     = /iphone|ipad|ipod/i.test(navigator.userAgent.toLowerCase());
+      var isSamsung = /SamsungBrowser/i.test(navigator.userAgent);
+      var isMobile  = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+      if (!isMobile) return; // hanya tampilkan di HP
+
+      var stepsHTML = "";
+      if (_prompt) {
+        stepsHTML = '<button id="_pwa_ol_install" style="width:100%;padding:16px;background:linear-gradient(135deg,#1d7a5f,#28a87e);color:#fff;border:none;border-radius:14px;font-size:16px;font-weight:800;cursor:pointer;font-family:sans-serif;box-shadow:0 4px 20px rgba(29,122,95,.4);">📲 Pasang Sekarang</button>';
+      } else if (isIOS) {
+        stepsHTML = [
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">1️⃣ Ketuk ikon <b>Bagikan ↑</b> di bawah Safari</div>',
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">2️⃣ Pilih <b>Tambahkan ke Layar Utama</b></div>',
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">3️⃣ Ketuk <b>Tambahkan</b> ✅</div>'
+        ].join("");
+      } else if (isSamsung) {
+        stepsHTML = [
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">1️⃣ Ketuk <b>⋮ Menu</b> pojok kanan atas</div>',
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">2️⃣ Pilih <b>Tambahkan halaman ke</b></div>',
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">3️⃣ Pilih <b>Layar Utama</b></div>',
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">4️⃣ Pilih <b>Tambah sebagai pintasan</b> ✅</div>'
+        ].join("");
+      } else {
+        stepsHTML = [
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">1️⃣ Ketuk <b>⋮ Menu</b> pojok kanan atas Chrome</div>',
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">2️⃣ Pilih <b>Tambahkan ke layar utama</b></div>',
+          '<div style="background:#f0fdf4;border-left:4px solid #1d7a5f;border-radius:0 12px 12px 0;padding:12px 16px;font-size:14px;line-height:1.7;">3️⃣ Ketuk <b>Tambahkan</b> ✅</div>'
+        ].join("");
+      }
+
+      var ov = document.createElement("div");
+      ov.id = "_pwa_overlay";
+      ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:999999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:sans-serif;";
+      ov.innerHTML = '<div style="background:#fff;border-radius:24px;padding:28px 24px 28px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.4);">'
+        + '<div style="text-align:center;margin-bottom:20px;">'
+        + '<div style="font-size:56px;margin-bottom:8px;">🕌</div>'
+        + '<div style="font-weight:800;font-size:20px;color:#1d7a5f;">Bunayya SMILE Hub</div>'
+        + '<div style="font-size:13px;color:#64748b;margin-top:4px;">Pasang di layar utama HP Anda</div>'
+        + '</div>'
+        + '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;">'
+        + stepsHTML
+        + '</div>'
+        + '<button id="_pwa_ol_skip" style="width:100%;padding:12px;background:#f1f5f9;color:#64748b;border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;font-family:sans-serif;">Nanti saja</button>'
+        + '</div>';
+      document.body.appendChild(ov);
+
+      var skipBtn = document.getElementById("_pwa_ol_skip");
+      if (skipBtn) skipBtn.onclick = function(){ ov.remove(); showFAB(); };
+
+      var instBtn = document.getElementById("_pwa_ol_install");
+      if (instBtn) instBtn.onclick = function(){ doInstall(); ov.remove(); };
+
+      _shown = true;
+    }
+
+    // Tombol FAB kecil di kanan bawah (fallback setelah overlay ditutup)
+    function showFAB() {
+      if (document.getElementById("_pwa_fab")) return;
+      var fab = document.createElement("button");
+      fab.id = "_pwa_fab";
+      fab.innerHTML = "📲";
+      fab.title = "Pasang di layar utama";
+      fab.style.cssText = [
+        "position:fixed;bottom:20px;right:16px;z-index:99999;",
+        "width:52px;height:52px;border-radius:50%;border:none;",
+        "background:linear-gradient(135deg,#1d7a5f,#28a87e);",
+        "color:#fff;font-size:22px;cursor:pointer;",
+        "box-shadow:0 4px 20px rgba(29,122,95,.6);",
+        "animation:_pwa_pulse 2.5s ease-in-out infinite;"
+      ].join("");
+      fab.onclick = function(){ doInstall(); };
+      document.body.appendChild(fab);
+    }
+
+    function doInstall() {
+      if (_prompt) {
+        _prompt.prompt();
+        _prompt.userChoice.then(function(r){
+          if (r.outcome==="accepted") removeAll();
+          _prompt = null;
+        });
+      } else {
+        showOverlay();
+      }
+    }
+
+    /* ── EVENTS ──────────────────────────────────────────────────────────── */
+    window.addEventListener("beforeinstallprompt", function(e) {
       e.preventDefault();
-      deferredPrompt = e;
-      // Tampilkan banner install setelah 3 detik
-      setTimeout(() => {
-        if (deferredPrompt && !localStorage.getItem("pwa_installed")) {
-          const banner = document.createElement("div");
-          banner.id = "pwa-banner";
-          banner.innerHTML = `
-            <div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-              background:#1d7a5f;color:white;padding:14px 20px;border-radius:16px;
-              box-shadow:0 4px 20px rgba(0,0,0,.25);display:flex;align-items:center;
-              gap:12px;z-index:99999;max-width:340px;width:calc(100% - 40px);font-family:sans-serif">
-              <span style="font-size:28px">🏫</span>
-              <div style="flex:1">
-                <div style="font-weight:700;font-size:14px">Install Bunayya SMILE Hub</div>
-                <div style="font-size:12px;opacity:.85">Tambahkan ke layar utama HP Anda</div>
-              </div>
-              <button id="pwa-install-btn" style="background:white;color:#1d7a5f;border:none;
-                padding:8px 14px;border-radius:10px;font-weight:700;cursor:pointer;font-size:13px">
-                Install
-              </button>
-              <button id="pwa-close-btn" style="background:transparent;color:white;border:none;
-                font-size:20px;cursor:pointer;padding:0 4px;line-height:1">×</button>
-            </div>`;
-          document.body.appendChild(banner);
-          document.getElementById("pwa-install-btn").onclick = () => {
-            deferredPrompt.prompt();
-            deferredPrompt.userChoice.then(r => {
-              if (r.outcome === "accepted") localStorage.setItem("pwa_installed","1");
-              banner.remove();
-              deferredPrompt = null;
-            });
-          };
-          document.getElementById("pwa-close-btn").onclick = () => {
-            banner.remove();
-            localStorage.setItem("pwa_installed","1");
-          };
-        }
-      }, 3000);
+      _prompt = e;
+      console.log("✅ beforeinstallprompt ready");
+      // Jika overlay sudah muncul, update tombolnya langsung
+      var ov = document.getElementById("_pwa_overlay");
+      if (ov) {
+        // Refresh overlay dengan tombol install
+        ov.remove();
+        _shown = false;
+        showOverlay();
+      } else {
+        showOverlay();
+      }
     });
-    window.addEventListener("appinstalled", () => {
-      localStorage.setItem("pwa_installed","1");
-      const b = document.getElementById("pwa-banner");
-      if (b) b.remove();
+
+    window.addEventListener("appinstalled", function() {
+      removeAll();
+      console.log("✅ PWA installed!");
     });
+
+    /* ── AUTO SHOW setelah halaman siap ─────────────────────────────────── */
+    window.__showPwaOverlay = showOverlay;
+    window._pwaInstall = doInstall;
+
+    window.addEventListener("load", function() {
+      // Langsung tampilkan overlay setelah 1.5 detik
+      setTimeout(function() {
+        if (!_shown) showOverlay();
+        // Fallback FAB jika bukan mobile
+        setTimeout(showFAB, 500);
+      }, 1500);
+    });
+
+  })();
   </script>
+  <style>
+    @keyframes _pwa_pulse {
+      0%,100% { box-shadow:0 4px 20px rgba(29,122,95,.6); transform:scale(1); }
+      50%      { box-shadow:0 4px 32px rgba(29,122,95,.9),0 0 0 8px rgba(29,122,95,.15); transform:scale(1.08); }
+    }
+  </style>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="document.getElementById('app-loading').innerHTML='<div style=padding:40px;text-align:center><h3 style=color:#991b1b>Gagal memuat halaman</h3><p>Periksa koneksi internet lalu refresh.</p><button onclick=location.reload() style=padding:10px 20px;background:#065f46;color:white;border:none;border-radius:8px;cursor:pointer>Refresh</button></div>'"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -1197,20 +1300,34 @@ function Dialog({ open, onClose, title, children, footer }) {
 function downloadTablePDF(tableId, judul, namaFile) {
   const el = document.getElementById(tableId);
   if (!el) { alert("Tabel tidak ditemukan."); return; }
-  if (typeof html2canvas === "undefined" || typeof window.jspdf === "undefined") {
-    alert("Library belum siap, tunggu sebentar lalu coba lagi."); return;
-  }
+
   const btn = document.getElementById("btn-pdf-" + tableId);
   if (btn) { btn.disabled = true; btn.textContent = "⏳ Memproses..."; }
 
+  // Tunggu html2canvas & jsPDF siap (maks 8 detik)
+  const waitReady = (cb, tries) => {
+    tries = tries || 0;
+    const h2c  = typeof html2canvas !== "undefined";
+    const jpdf = typeof window.jspdf !== "undefined" || typeof jspdf !== "undefined";
+    if (h2c && jpdf) return cb();
+    if (tries > 40) {
+      alert("Library PDF belum siap. Pastikan koneksi internet aktif lalu refresh halaman.");
+      if (btn) { btn.disabled = false; btn.textContent = "⬇️ PDF"; }
+      return;
+    }
+    setTimeout(() => waitReady(cb, tries + 1), 200);
+  };
+
+  waitReady(() => {
+
   html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false })
     .then(canvas => {
-      const { jsPDF } = window.jspdf;
+      const jsPDFLib = (window.jspdf || jspdf).jsPDF;
       const imgW = canvas.width;
       const imgH = canvas.height;
       // A4 landscape jika tabel lebar
       const isLandscape = imgW > imgH;
-      const pdf = new jsPDF({ orientation: isLandscape ? "landscape" : "portrait", unit: "mm", format: "a4" });
+      const pdf = new jsPDFLib({ orientation: isLandscape ? "landscape" : "portrait", unit: "mm", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
       const margin = 10;
@@ -1263,6 +1380,7 @@ function downloadTablePDF(tableId, judul, namaFile) {
       alert("Gagal: " + err.message);
       if (btn) { btn.disabled = false; btn.textContent = "⬇️ PDF"; }
     });
+  }); // end waitReady
 }
 
 function App() {
@@ -1964,6 +2082,25 @@ function App() {
             </div>
           )}
           <button className="btn-logout" onClick={handleLogout} title="Logout"><Icon.Logout /></button>
+          {!window.matchMedia("(display-mode:standalone)").matches && !navigator.standalone && (
+            <button
+              title="Pasang aplikasi di layar utama HP"
+              onClick={() => {
+                if (window._pwaInstall) window._pwaInstall();
+                else {
+                  var ov = document.getElementById("_pwa_overlay");
+                  if (ov) { ov.style.display="flex"; }
+                  else if (window.__showPwaOverlay) window.__showPwaOverlay();
+                }
+              }}
+              style={{
+                background:"rgba(255,255,255,.2)", border:"1px solid rgba(255,255,255,.4)",
+                borderRadius:8, color:"white", width:36, height:36,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                cursor:"pointer", fontSize:18, flexShrink:0
+              }}
+            >📲</button>
+          )}
         </div>
       </header>
 
@@ -2996,61 +3133,60 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
     const handleDownloadPDF = () => {
       const el = document.getElementById("rapor-preview");
       if (!el) { alert("Pilih siswa terlebih dahulu!"); return; }
-      if (typeof html2canvas === "undefined") { alert("Library belum siap, tunggu sebentar."); return; }
 
       const btn = document.getElementById("btn-download-rapor");
-      if (btn) { btn.disabled = true; btn.innerText = "⟳ Memproses..."; }
+      if (btn) { btn.disabled = true; btn.innerText = "⏳ Memproses..."; }
 
-      html2canvas(el, {
-        scale: 3,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-      }).then(canvas => {
-        const imgData  = canvas.toDataURL("image/jpeg", 0.98);
-        const imgW     = canvas.width;
-        const imgH     = canvas.height;
+      const waitReady = (cb, tries) => {
+        tries = tries || 0;
+        if (typeof html2canvas !== "undefined" && (typeof window.jspdf !== "undefined" || typeof jspdf !== "undefined")) return cb();
+        if (tries > 40) { alert("Library belum siap, pastikan internet aktif lalu refresh."); if (btn) { btn.disabled = false; btn.innerText = "⬇️ Download PDF Rapor"; } return; }
+        setTimeout(() => waitReady(cb, tries + 1), 200);
+      };
 
-        // A4 dalam px pada 96dpi: 794 x 1123
-        const a4W = 794, a4H = 1123;
-        const scale  = Math.min(a4W / (imgW / 3), a4H / (imgH / 3));
-        const finalW = (imgW / 3) * scale;
-        const finalH = (imgH / 3) * scale;
+      waitReady(() => {
+        html2canvas(el, {
+          scale: 3, useCORS: true, allowTaint: true,
+          backgroundColor: "#ffffff", logging: false,
+        }).then(canvas => {
+          const jsPDFLib = (window.jspdf || jspdf).jsPDF;
+          const pdf    = new jsPDFLib({ orientation: "portrait", unit: "mm", format: "a4" });
+          const pageW  = pdf.internal.pageSize.getWidth();
+          const pageH  = pdf.internal.pageSize.getHeight();
+          const margin = 8;
+          const usableW = pageW - margin * 2;
+          const imgW   = canvas.width;
+          const imgH   = canvas.height;
+          const scale  = usableW / (imgW / 3);
+          const imgHmm = (imgH / 3) * scale;
+          const imgData = canvas.toDataURL("image/jpeg", 0.97);
 
-        // Buat canvas A4 putih
-        const pdf = document.createElement("canvas");
-        pdf.width  = a4W;
-        pdf.height = a4H;
-        const ctx  = pdf.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, a4W, a4H);
+          const maxH = pageH - margin * 2;
+          if (imgHmm <= maxH) {
+            pdf.addImage(imgData, "JPEG", margin, margin, usableW, imgHmm);
+          } else {
+            let srcY = 0;
+            let firstPage = true;
+            while (srcY < imgH) {
+              const sliceH = Math.min((maxH / scale) * 3, imgH - srcY);
+              const sc = document.createElement("canvas");
+              sc.width = imgW; sc.height = sliceH;
+              sc.getContext("2d").drawImage(canvas, 0, srcY, imgW, sliceH, 0, 0, imgW, sliceH);
+              if (!firstPage) { pdf.addPage(); }
+              pdf.addImage(sc.toDataURL("image/jpeg", 0.97), "JPEG", margin, margin, usableW, (sliceH / 3) * scale);
+              srcY += sliceH;
+              firstPage = false;
+            }
+          }
 
-        const img = new Image();
-        img.onload = () => {
-          const x = (a4W - finalW) / 2;
-          const y = 20;
-          ctx.drawImage(img, x, y, finalW, finalH);
-
-          const s = data.students.find(s => s.id === formData.rapor_siswa);
+          const s  = data.students.find(s => s.id === formData.rapor_siswa);
           const nm = (s?.nama || "siswa").replace(/ /g, "-");
-          const link = document.createElement("a");
-          link.download = `Rapor-${nm}-${formData.rapor_semester || "Sem1"}-${formData.rapor_tahun || "2025-2026"}.pdf`;
-
-          // Simpan sebagai PNG lalu rename ke .pdf (browser tetap bisa buka)
-          // Atau simpan sebagai JPEG dengan ekstensi .jpg
-          link.href = pdf.toDataURL("image/jpeg", 0.97);
-          link.download = link.download.replace(".pdf", ".jpg");
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-
+          pdf.save(`Rapor-${nm}-${formData.rapor_semester || "Sem1"}-${formData.rapor_tahun || "2025-2026"}.pdf`);
           if (btn) { btn.disabled = false; btn.innerText = "⬇️ Download PDF Rapor"; }
-        };
-        img.src = imgData;
-      }).catch(err => {
-        alert("Gagal: " + err.message);
-        if (btn) { btn.disabled = false; btn.innerText = "⬇️ Download PDF Rapor"; }
+        }).catch(err => {
+          alert("Gagal: " + err.message);
+          if (btn) { btn.disabled = false; btn.innerText = "⬇️ Download PDF Rapor"; }
+        });
       });
     };
 
@@ -3090,7 +3226,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
           </div>
 
           <button id="btn-download-rapor" className="btn btn-primary" disabled={!formData.rapor_siswa} onClick={handleDownloadPDF} style={{ marginBottom:20 }}>
-            <Icon.Download /> ⬇️ Download Rapor (JPG)
+            <Icon.Download /> ⬇️ Download PDF Rapor
           </button>
 
           {formData.rapor_siswa && (() => {
