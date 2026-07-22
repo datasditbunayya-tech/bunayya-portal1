@@ -1626,10 +1626,23 @@ function App() {
   const [addDialog, setAddDialog] = useState(null);
 
   // ── Tulis SATU item ke Firebase tanpa menyentuh data lain ─────────────────
+  // PENTING: mengembalikan Promise. Caller WAJIB menunggu (.then/.catch atau await)
+  // sebelum meng-update state lokal, supaya data yang gagal tersimpan ke Firestore
+  // tidak "tampak" tersimpan di UI lalu hilang lagi saat snapshot berikutnya datang.
   const writeDoc = (collKey, item) => {
     const fbColl = FB_COLLECTIONS[collKey];
-    if (!fbColl || !window.__firebase?.ready) return;
-    window.__firebase.db.collection(fbColl).doc(String(item.id))
+    if (!fbColl) {
+      const err = new Error("Koleksi tidak dikenali: " + collKey);
+      console.error(err);
+      return Promise.reject(err);
+    }
+    if (!window.__firebase?.ready) {
+      setSyncStatus("error");
+      setSyncMsg("⚠️ Belum terhubung ke database. Tunggu beberapa detik lalu coba lagi.");
+      setTimeout(() => { setSyncStatus("idle"); setSyncMsg(""); }, 4000);
+      return Promise.reject(new Error("Firebase belum siap / belum terhubung"));
+    }
+    return window.__firebase.db.collection(fbColl).doc(String(item.id))
       .set(item)
       .then(() => {
         setSyncStatus("success");
@@ -1640,6 +1653,8 @@ function App() {
         console.error("writeDoc error:", err);
         setSyncStatus("error");
         setSyncMsg("❌ Gagal simpan: " + err.message);
+        setTimeout(() => { setSyncStatus("idle"); setSyncMsg(""); }, 5000);
+        throw err;
       });
   };
 
@@ -4419,25 +4434,43 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
       if (!formData.newSiswaNis || !formData.newSiswaNama || !formData.newSiswaKelas) {
         alert("NIS, Nama, dan Kelas wajib diisi!"); return;
       }
+      // Tandai sedang menyimpan supaya tombol tidak diklik dobel & user tahu prosesnya berjalan
+      patchForm({ savingSiswa: true });
+
       if (formData.editSiswaId) {
         const editId = formData.editSiswaId;
         const updated = { ...data.students.find(s => s.id === editId), nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas };
-        setData(d => {
-          const next = { ...d, students: d.students.map(s => s.id === editId ? updated : s) };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
-          return next;
-        });
-        writeDoc("students", updated);
+        // Tulis ke Firestore DULU. UI baru di-update & dialog baru ditutup setelah dipastikan berhasil,
+        // supaya perubahan tidak "hilang" saat data disinkronkan ulang dari server.
+        writeDoc("students", updated)
+          .then(() => {
+            setData(d => {
+              const next = { ...d, students: d.students.map(s => s.id === editId ? updated : s) };
+              try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+              return next;
+            });
+            patchForm({ showSiswaDialog: false, savingSiswa: false });
+          })
+          .catch(() => {
+            patchForm({ savingSiswa: false });
+            alert("❌ Gagal menyimpan perubahan data siswa. Periksa koneksi internet lalu coba lagi.");
+          });
       } else {
         const rec = { id: genId(), nis: formData.newSiswaNis, nama: formData.newSiswaNama, class_name: formData.newSiswaKelas };
-        setData(d => {
-          const next = { ...d, students: [...d.students, rec] };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
-          return next;
-        });
-        writeDoc("students", rec);
+        writeDoc("students", rec)
+          .then(() => {
+            setData(d => {
+              const next = { ...d, students: [...d.students, rec] };
+              try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+              return next;
+            });
+            patchForm({ showSiswaDialog: false, savingSiswa: false });
+          })
+          .catch(() => {
+            patchForm({ savingSiswa: false });
+            alert("❌ Gagal menyimpan data siswa baru. Periksa koneksi internet lalu coba lagi.");
+          });
       }
-      patchForm({ showSiswaDialog: false });
     };
     return (
       <div>
@@ -4478,7 +4511,7 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
 
         {formData.showSiswaDialog && (
           <Dialog open title={formData.editSiswaId ? "✏️ Edit Data Siswa" : "➕ Tambah Siswa Baru"} onClose={() => patchForm({ showSiswaDialog: false })}
-            footer={<><button className="btn btn-outline" onClick={() => patchForm({ showSiswaDialog: false })}>Batal</button><button className="btn btn-blue" onClick={saveSiswa}><Icon.Save /> {formData.editSiswaId ? "Simpan Perubahan" : "Tambah Siswa"}</button></>}>
+            footer={<><button className="btn btn-outline" onClick={() => patchForm({ showSiswaDialog: false })} disabled={formData.savingSiswa}>Batal</button><button className="btn btn-blue" onClick={saveSiswa} disabled={formData.savingSiswa}><Icon.Save /> {formData.savingSiswa ? "Menyimpan..." : (formData.editSiswaId ? "Simpan Perubahan" : "Tambah Siswa")}</button></>}>
             <div className="form-group">
               <label className="label">NIS *</label>
               <input className="input" placeholder="Nomor Induk Siswa" value={formData.newSiswaNis || ""} onChange={e => patchForm({ newSiswaNis: e.target.value })} />
