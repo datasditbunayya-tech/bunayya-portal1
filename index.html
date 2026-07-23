@@ -2994,15 +2994,29 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
               ); return fj.length === 0
                 ? <div className="empty-state" style={{padding:20,textAlign:"center",color:"#999"}}>Belum ada data jurnal</div>
                 : fj.map(j => (
-                <div key={j.id} className="row-item">
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{j.topik}</div>
-                    <div className="text-xs text-muted">{j.teacher?.nama} — {j.kelas} — {j.mataPelajaran}</div>
+                <div key={j.id} className="row-item" style={{ alignItems: "flex-start", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", width: "100%" }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>📌 Topik: {j.topik}</div>
+                      <div className="text-xs text-muted">{j.teacher?.nama} — {j.kelas} — {j.mataPelajaran}</div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <span className="text-xs text-muted">{j.tanggal}</span>
+                      <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("journals", j.id, j.topik)}><Icon.Trash /></button>
+                    </div>
                   </div>
-                  <div className="flex gap-2 items-center">
-                    <span className="text-xs text-muted">{j.tanggal}</span>
-                    <button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("journals", j.id, j.topik)}><Icon.Trash /></button>
-                  </div>
+                  {j.kegiatan && (
+                    <div style={{ width: "100%", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 12px" }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: "#334155", marginBottom: 4 }}>📋 Kegiatan (5 Uraian):</div>
+                      <div style={{ fontSize: 12, color: "#475569", whiteSpace: "pre-line", lineHeight: 1.6 }}>{j.kegiatan}</div>
+                    </div>
+                  )}
+                  {j.catatan && (
+                    <div style={{ width: "100%", background: "#fefce8", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px" }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: "#854d0e", marginBottom: 4 }}>📝 Catatan:</div>
+                      <div style={{ fontSize: 12, color: "#78350f", whiteSpace: "pre-line", lineHeight: 1.6 }}>{j.catatan}</div>
+                    </div>
+                  )}
                 </div>
               ))})()}
             </div>
@@ -4538,18 +4552,31 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
 
 // ─── PORTAL WALI ─────────────────────────────────────────────────────────────
 function PortalWali({ menu, data, formData, patchForm, user }) {
+  const todayStr = today();
   const studentData = user?.role === "student"
     ? data.students.find(s => s.nis === user.nis)
     : data.students.find(s => s.id === formData.wali_siswa);
 
   const sid = studentData?.id || formData.wali_siswa;
 
-  const studentAtt = data.studentAttendance.filter(a => a.studentId === sid);
-  const studentGrades = data.grades.filter(g => g.studentId === sid);
-  const studentReports = data.dailyReports.filter(r => r.studentId === sid);
-  const studentActs = data.activities.filter(a => a.studentId === sid);
-  const studentTargets = data.targets.filter(t => t.studentId === sid);
-  const studentZiyadah = data.ziyadah.filter(z => z.studentId === sid);
+  // ── Filter rentang tanggal untuk Dashboard ──────────────────────────────
+  const dashDari   = formData.wali_dash_dari   ?? "";
+  const dashSampai = formData.wali_dash_sampai ?? "";
+  const inDashRange = tgl => (!dashDari || tgl >= dashDari) && (!dashSampai || tgl <= dashSampai);
+
+  const studentAttAll = data.studentAttendance.filter(a => a.studentId === sid);
+  const studentGradesAll = data.grades.filter(g => g.studentId === sid);
+  const studentReportsAll = data.dailyReports.filter(r => r.studentId === sid);
+  const studentActsAll = data.activities.filter(a => a.studentId === sid);
+  const studentTargetsAll = data.targets.filter(t => t.studentId === sid);
+  const studentZiyadahAll = data.ziyadah.filter(z => z.studentId === sid);
+
+  const studentAtt = studentAttAll.filter(a => inDashRange(a.tanggal));
+  const studentGrades = studentGradesAll.filter(g => inDashRange(g.tanggal));
+  const studentReports = studentReportsAll.filter(r => inDashRange(r.tanggal));
+  const studentActs = studentActsAll.filter(a => inDashRange(a.tanggal));
+  const studentTargets = studentTargetsAll.filter(t => inDashRange(t.tanggal));
+  const studentZiyadah = studentZiyadahAll.filter(z => inDashRange(z.tanggal));
 
   const hadirCount = studentAtt.filter(a => a.status === "Hadir").length;
   const attPct = studentAtt.length > 0 ? Math.round((hadirCount / studentAtt.length) * 100) : 0;
@@ -4592,6 +4619,30 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       {/* Dashboard */}
       {menu === "dashboard" && (
         <div>
+          {/* Filter Tanggal + Tombol Download */}
+          <div className="card mb-4">
+            <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+              <div>
+                <div className="card-title">📅 Rentang Tanggal</div>
+                <div className="card-sub">Filter data yang ditampilkan pada dashboard</div>
+              </div>
+              <div className="flex gap-2 items-center" style={{ flexWrap: "wrap", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Dari</span>
+                <input type="date" className="input" style={{ width: 140, fontSize: 13, padding: "5px 8px" }}
+                  value={formData.wali_dash_dari ?? ""}
+                  onChange={e => patchForm({ wali_dash_dari: e.target.value })} />
+                <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Sampai</span>
+                <input type="date" className="input" style={{ width: 140, fontSize: 13, padding: "5px 8px" }}
+                  value={formData.wali_dash_sampai ?? ""}
+                  onChange={e => patchForm({ wali_dash_sampai: e.target.value })} />
+                <button onClick={() => patchForm({ wali_dash_dari: todayStr, wali_dash_sampai: todayStr })}
+                  style={{ padding: "5px 10px", fontSize: 12, fontWeight: 700, background: "#ede9fe", color: "#6b3fa0", border: "none", borderRadius: 8, cursor: "pointer" }}>Hari Ini</button>
+                <button onClick={() => patchForm({ wali_dash_dari: "", wali_dash_sampai: "" })}
+                  style={{ padding: "5px 10px", fontSize: 12, fontWeight: 700, background: "#f1f5f9", color: "#475569", border: "none", borderRadius: 8, cursor: "pointer" }}>Semua</button>
+              </div>
+            </div>
+          </div>
+
           {/* Tombol Download */}
           {(() => {
             const [downloading, setDownloading] = React.useState(false);
@@ -4792,12 +4843,12 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
               <div className="card-body">
                 {(() => {
                   const items = [
-                    ...studentAtt.map(a => ({ tanggal: a.tanggal, icon: a.status === "Hadir" ? "✅" : a.status === "Sakit" ? "🤒" : a.status === "Izin" ? "📄" : "❌", teks: `Absensi: ${a.status}`, bg:"#ecfdf5", warna:"#065f46" })),
-                    ...studentGrades.map(g => ({ tanggal: g.tanggal, icon: "📊", teks: `Nilai ${g.mataPelajaran}: ${g.skor}`, bg:"#ede9fe", warna:"#5b21b6" })),
-                    ...studentReports.map(r => ({ tanggal: r.tanggal, icon: "📝", teks: `Laporan Harian: ${r.bahasan || r.mataPelajaran || ""}`, bg:"#fef3c7", warna:"#92400e" })),
-                    ...studentActs.map(a => ({ tanggal: a.tanggal, icon: "🎯", teks: `Kegiatan: ${a.kategori || a.mataPelajaran || ""}`, bg:"#eff6ff", warna:"#1e40af" })),
-                    ...studentTargets.map(t => ({ tanggal: t.tanggal, icon: "🏆", teks: `Target: ${t.namaTarget || t.catatan || ""}`, bg:"#fee2e2", warna:"#991b1b" })),
-                    ...studentZiyadah.map(z => ({ tanggal: z.tanggal, icon: "📖", teks: `Hafalan: ${z.surah || ""} ${z.ayat ? "ayat "+z.ayat : ""}`, bg:"#d1fae5", warna:"#065f46" })),
+                    ...studentAttAll.map(a => ({ tanggal: a.tanggal, icon: a.status === "Hadir" ? "✅" : a.status === "Sakit" ? "🤒" : a.status === "Izin" ? "📄" : "❌", teks: `Absensi: ${a.status}`, bg:"#ecfdf5", warna:"#065f46" })),
+                    ...studentGradesAll.map(g => ({ tanggal: g.tanggal, icon: "📊", teks: `Nilai ${g.mataPelajaran}: ${g.skor}`, bg:"#ede9fe", warna:"#5b21b6" })),
+                    ...studentReportsAll.map(r => ({ tanggal: r.tanggal, icon: "📝", teks: `Laporan Harian: ${r.bahasan || r.mataPelajaran || ""}`, bg:"#fef3c7", warna:"#92400e" })),
+                    ...studentActsAll.map(a => ({ tanggal: a.tanggal, icon: "🎯", teks: `Kegiatan: ${a.kategori || a.mataPelajaran || ""}`, bg:"#eff6ff", warna:"#1e40af" })),
+                    ...studentTargetsAll.map(t => ({ tanggal: t.tanggal, icon: "🏆", teks: `Target: ${t.namaTarget || t.catatan || ""}`, bg:"#fee2e2", warna:"#991b1b" })),
+                    ...studentZiyadahAll.map(z => ({ tanggal: z.tanggal, icon: "📖", teks: `Hafalan: ${z.surah || ""} ${z.ayat ? "ayat "+z.ayat : ""}`, bg:"#d1fae5", warna:"#065f46" })),
                   ].sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || "")).slice(0, 20);
 
                   if (items.length === 0) return <div className="empty-state">Belum ada aktivitas tercatat</div>;
@@ -4823,7 +4874,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
           <div className="card-body">
             <div className="flex gap-4 mb-4" style={{ justifyContent: "center" }}>
               {STATUS_ABSENSI.map(st => {
-                const count = studentAtt.filter(a => a.status === st).length;
+                const count = studentAttAll.filter(a => a.status === st).length;
                 return (
                   <div key={st} style={{ textAlign: "center", padding: "12px 20px", background: attBg[st], borderRadius: 12 }}>
                     <div style={{ fontSize: 28, fontWeight: 700, color: attColors[st] }}>{count}</div>
@@ -4836,7 +4887,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
               <table>
                 <thead><tr><th>Tanggal</th><th>Status</th></tr></thead>
                 <tbody>
-                  {studentAtt.length === 0 ? <tr><td colSpan={2} className="empty-state">Tidak ada data</td></tr> : studentAtt.map(a => <tr key={a.id}><td>{a.tanggal}</td><td><StatusBadge status={a.status} /></td></tr>)}
+                  {studentAttAll.length === 0 ? <tr><td colSpan={2} className="empty-state">Tidak ada data</td></tr> : studentAttAll.map(a => <tr key={a.id}><td>{a.tanggal}</td><td><StatusBadge status={a.status} /></td></tr>)}
                 </tbody>
               </table>
             </div>
@@ -4848,9 +4899,9 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
         <div className="card">
           <div className="card-header"><div className="card-title">📝 Laporan Harian</div></div>
           <div className="card-body">
-            {studentReports.length === 0 ? <div className="empty-state">Tidak ada laporan harian</div> : (
+            {studentReportsAll.length === 0 ? <div className="empty-state">Tidak ada laporan harian</div> : (
               <div className="row-list">
-                {studentReports.map(r => (
+                {studentReportsAll.map(r => (
                   <div key={r.id} className="row-item">
                     <div>
                       <div style={{ fontWeight: 600 }}>{r.bahasan}</div>
@@ -4870,9 +4921,9 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
         <div className="card">
           <div className="card-header"><div className="card-title">📊 Nilai</div></div>
           <div className="card-body">
-            {studentGrades.length > 0 && (
+            {studentGradesAll.length > 0 && (
               <div className="grid grid-4 mb-4" style={{ gap: 12 }}>
-                {studentGrades.slice(0, 8).map(g => (
+                {studentGradesAll.slice(0, 8).map(g => (
                   <div key={g.id} style={{ background: "#f8fafc", borderRadius: 10, padding: 12, textAlign: "center" }}>
                     <div className="text-xs text-muted">{g.mataPelajaran}</div>
                     <div style={{ fontSize: 28, fontWeight: 700 }}>{g.skor}</div>
@@ -4884,7 +4935,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
               <table>
                 <thead><tr><th>Tanggal</th><th>Mapel</th><th>Jenis</th><th>Nilai</th></tr></thead>
                 <tbody>
-                  {studentGrades.length === 0 ? <tr><td colSpan={4} className="empty-state">Tidak ada data nilai</td></tr> : studentGrades.map(g => <tr key={g.id}><td className="text-sm">{g.tanggal}</td><td>{g.mataPelajaran}</td><td><Badge variant="gray">{g.jenisNilai}</Badge></td><td style={{ fontWeight: 700 }}>{g.skor}</td></tr>)}
+                  {studentGradesAll.length === 0 ? <tr><td colSpan={4} className="empty-state">Tidak ada data nilai</td></tr> : studentGradesAll.map(g => <tr key={g.id}><td className="text-sm">{g.tanggal}</td><td>{g.mataPelajaran}</td><td><Badge variant="gray">{g.jenisNilai}</Badge></td><td style={{ fontWeight: 700 }}>{g.skor}</td></tr>)}
                 </tbody>
               </table>
             </div>
@@ -4896,9 +4947,9 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
         <div className="card">
           <div className="card-header"><div className="card-title">🎯 Laporan Kegiatan</div></div>
           <div className="card-body">
-            {studentActs.length === 0 ? <div className="empty-state">Tidak ada kegiatan</div> : (
+            {studentActsAll.length === 0 ? <div className="empty-state">Tidak ada kegiatan</div> : (
               <div className="row-list">
-                {studentActs.map(a => (
+                {studentActsAll.map(a => (
                   <div key={a.id} className="row-item">
                     <div><div style={{ fontWeight: 600 }}>{a.kategori}</div><div className="text-sm text-muted">{a.tanggal}</div>{a.deskripsi && <div className="text-xs text-muted">{a.deskripsi}</div>}</div>
                     <StatusBadge status={a.penilaian} />
@@ -4914,9 +4965,9 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
         <div className="card">
           <div className="card-header"><div className="card-title">🏆 Target Pencapaian</div></div>
           <div className="card-body">
-            {studentTargets.length === 0 ? <div className="empty-state">Tidak ada target</div> : (
+            {studentTargetsAll.length === 0 ? <div className="empty-state">Tidak ada target</div> : (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {studentTargets.map(t => (
+                {studentTargetsAll.map(t => (
                   <div key={t.id} style={{ background: "#f8fafc", borderRadius: 12, padding: 16 }}>
                     <div className="flex justify-between items-center mb-2">
                       <div style={{ fontWeight: 700 }}>{t.mataPelajaran}</div>
@@ -4939,9 +4990,9 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
         <div className="card">
           <div className="card-header"><div className="card-title">📖 Surat yang Dihafal</div></div>
           <div className="card-body">
-            {studentZiyadah.length === 0 ? <div className="empty-state">Tidak ada hafalan</div> : (
+            {studentZiyadahAll.length === 0 ? <div className="empty-state">Tidak ada hafalan</div> : (
               <div className="row-list">
-                {studentZiyadah.map(z => (
+                {studentZiyadahAll.map(z => (
                   <div key={z.id} className="row-item">
                     <div><div style={{ fontWeight: 600 }}>{z.surat}</div><div className="text-sm text-muted">{z.juz} — {z.tanggal}</div>{z.progress && <div className="text-xs text-muted">{z.progress}</div>}</div>
                     <StatusBadge status={z.hasil} />
@@ -4963,4 +5014,3 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
     if (loadEl) loadEl.style.display = "none";
   </script>
 </body>
-</html>
