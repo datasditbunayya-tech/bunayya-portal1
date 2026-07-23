@@ -1797,7 +1797,7 @@ function App() {
   const saveHarian = () => {
     const s = data.students.find(s => s.id === formData.h_siswa);
     if (!s || !formData.h_bahasan || !formData.h_hasil) { alert("⚠️ Lengkapi data harian!"); return; }
-    const rec = { id: genId(), studentId: s.id, tanggal: formData.h_tanggal || today(), kelas: s.class_name, bahasan: formData.h_bahasan, halaman: formData.h_halaman || "", hasil: formData.h_hasil, catatan: formData.h_catatan || "" };
+    const rec = { id: genId(), studentId: s.id, tanggal: formData.h_tanggal || today(), kelas: s.class_name, bahasan: formData.h_bahasan, halaman: formData.h_halaman || "", hasil: formData.h_hasil, catatan: formData.h_catatan || "", teacherId: user?.teacherId || null };
     setData(d => { const next = { ...d, dailyReports: [...d.dailyReports, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDoc("dailyReports", rec);
     patchForm({ h_bahasan: "", h_halaman: "", h_catatan: "" });
@@ -1814,7 +1814,8 @@ function App() {
       id: genId(), studentId: s.id, tanggal, kelas,
       kategori: mapel, mataPelajaran: mapel,
       penilaian: formData[`kg_p_${kelas}_${s.id}`] || "Sangat Baik",
-      deskripsi: ""
+      deskripsi: "",
+      teacherId: user?.teacherId || null
     }));
     setData(d => { const next = { ...d, activities: [...d.activities, ...records] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDocs("activities", records);
@@ -1839,7 +1840,8 @@ function App() {
       progressTotal: parseInt(formData.tr_progress_total) || 100,
       satuan: formData.tr_satuan || "",
       hasil: formData.tr_hasil,
-      catatan: formData.tr_catatan || ""
+      catatan: formData.tr_catatan || "",
+      teacherId: user?.teacherId || null
     };
     setData(d => { const next = { ...d, targets: [...d.targets, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDoc("targets", rec);
@@ -1850,7 +1852,7 @@ function App() {
   const saveZiyadah = () => {
     const s = data.students.find(s => s.id === formData.z_siswa);
     if (!s || !formData.z_juz || !formData.z_hasil) { alert("⚠️ Lengkapi data ziyadah!"); return; }
-    const rec = { id: genId(), studentId: s.id, tanggal: formData.z_tanggal || today(), kelas: s.class_name, juz: formData.z_juz, surat: formData.z_surat || "", progress: formData.z_progress || "", hasil: formData.z_hasil, catatan: formData.z_catatan || "" };
+    const rec = { id: genId(), studentId: s.id, tanggal: formData.z_tanggal || today(), kelas: s.class_name, juz: formData.z_juz, surat: formData.z_surat || "", progress: formData.z_progress || "", hasil: formData.z_hasil, catatan: formData.z_catatan || "", teacherId: user?.teacherId || null };
     setData(d => { const next = { ...d, ziyadah: [...d.ziyadah, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDoc("ziyadah", rec);
     patchForm({ z_juz: "", z_surat: "", z_progress: "", z_catatan: "" });
@@ -1865,7 +1867,7 @@ function App() {
     const students = data.students.filter(s => s.class_name === kelas);
     const records  = students
       .filter(s => formData[`nm_v_${kelas}_${s.id}`])
-      .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama } }));
+      .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama }, teacherId: user?.teacherId || null }));
     if (!records.length) { alert("Masukkan nilai untuk minimal satu siswa!"); return; }
     setData(d => { const next = { ...d, grades: [...d.grades, ...records] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
     writeDocs("grades", records);
@@ -2004,6 +2006,7 @@ function App() {
     { id: "jurnal", label: "📝 Jurnal Mengajar" },
     { id: "rekap-nilai", label: "📈 Rekap Nilai" },
     { id: "cetak-rapor", label: "📄 Cetak Rapor" },
+    { id: "performa-guru", label: "🏆 Performa Guru" },
     ...(canAccess("master-guru") ? [{ id: "master-guru", label: "📚 Master Guru" }] : []),
     ...(canAccess("kelola-pintasan") ? [{ id: "kelola-pintasan", label: "🔗 Pintasan" }] : []),
     ...(canAccess("pengaturan-mapel") ? [{ id: "pengaturan-mapel", label: "⚙️ Mapel" }] : []),
@@ -3357,6 +3360,261 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
             );
           })()}
         </div>
+      </div>
+    );
+  }
+
+  // Laporan Performa Guru
+  if (menu === "performa-guru") {
+    const pgTeacherId = formData.pg_teacherId ?? (user?.role === "teacher" ? user.teacherId : "");
+    const pgDari   = formData.pg_dari   ?? "";
+    const pgSampai = formData.pg_sampai ?? "";
+    const inPgRange = tgl => (!pgDari || tgl >= pgDari) && (!pgSampai || tgl <= pgSampai);
+
+    const selectedTeacher = data.teachers.find(t => t.id === pgTeacherId);
+
+    const pgAbsensi = data.teacherAttendance.filter(a => (!pgTeacherId || a.teacherId === pgTeacherId) && inPgRange(a.tanggal));
+    const pgJurnal   = data.journals.filter(j => (!pgTeacherId || j.teacherId === pgTeacherId) && inPgRange(j.tanggal));
+    const pgKegiatan = data.activities.filter(a => (!pgTeacherId || a.teacherId === pgTeacherId) && inPgRange(a.tanggal));
+    const pgZiyadah  = data.ziyadah.filter(z => (!pgTeacherId || z.teacherId === pgTeacherId) && inPgRange(z.tanggal));
+    const pgTarget   = data.targets.filter(t => (!pgTeacherId || t.teacherId === pgTeacherId) && inPgRange(t.tanggal));
+    const pgNilai    = data.grades.filter(g => (!pgTeacherId || g.teacherId === pgTeacherId) && inPgRange(g.tanggal));
+    const pgHarian   = data.dailyReports.filter(r => (!pgTeacherId || r.teacherId === pgTeacherId) && inPgRange(r.tanggal));
+
+    const hadirCountPg = pgAbsensi.filter(a => a.status === "Hadir").length;
+    const absPctPg = pgAbsensi.length > 0 ? Math.round((hadirCountPg / pgAbsensi.length) * 100) : 0;
+
+    const attColorsPg = { Hadir: "#065f46", Sakit: "#92400e", Izin: "#1e40af", Alpa: "#991b1b" };
+    const attBgPg     = { Hadir: "#d1fae5", Sakit: "#fef3c7", Izin: "#dbeafe", Alpa: "#fee2e2" };
+
+    return (
+      <div>
+        {/* Selector & Filter */}
+        <div className="card mb-4">
+          <div className="card-header" style={{ flexWrap:"wrap", gap:10 }}>
+            <div>
+              <div className="card-title">🏆 Laporan Performa Guru</div>
+              <div className="card-sub">Rekap aktivitas &amp; kinerja guru di seluruh aplikasi</div>
+            </div>
+            <button id="btn-pdf-performa-guru" onClick={() => downloadTablePDF("performa-guru-capture", `Laporan Performa Guru — ${selectedTeacher?.nama || "Semua Guru"}`, `Performa-Guru-${(selectedTeacher?.nama || "Semua").replace(/ /g,"-")}`)}
+              style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+          </div>
+          <div className="card-body">
+            <div className="grid grid-2 mb-3" style={{ gap:12 }}>
+              <div className="form-group" style={{ margin:0 }}>
+                <label className="label">Pilih Guru</label>
+                <div className="select-wrap"><select className="select" value={pgTeacherId} onChange={e => patchForm({ pg_teacherId: e.target.value })}>
+                  <option value="">-- Semua Guru --</option>
+                  {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
+                </select></div>
+              </div>
+              <div className="flex gap-2 items-end" style={{ flexWrap:"wrap", gap:8 }}>
+                <div>
+                  <label className="label" style={{ display:"block", marginBottom:4 }}>Dari</label>
+                  <input type="date" className="input" style={{ width:140, fontSize:13, padding:"5px 8px" }} value={pgDari} onChange={e => patchForm({ pg_dari: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label" style={{ display:"block", marginBottom:4 }}>Sampai</label>
+                  <input type="date" className="input" style={{ width:140, fontSize:13, padding:"5px 8px" }} value={pgSampai} onChange={e => patchForm({ pg_sampai: e.target.value })} />
+                </div>
+                <button onClick={() => patchForm({ pg_dari: todayStr, pg_sampai: todayStr })}
+                  style={{ padding:"5px 10px", fontSize:12, fontWeight:700, background:"#e0f2fe", color:"#0369a1", border:"none", borderRadius:8, cursor:"pointer" }}>Hari Ini</button>
+                <button onClick={() => patchForm({ pg_dari: "", pg_sampai: "" })}
+                  style={{ padding:"5px 10px", fontSize:12, fontWeight:700, background:"#f1f5f9", color:"#475569", border:"none", borderRadius:8, cursor:"pointer" }}>Semua</button>
+              </div>
+            </div>
+            {!pgTeacherId && (
+              <div style={{ fontSize:12, color:"#92400e", background:"#fef3c7", borderRadius:8, padding:"8px 12px" }}>
+                ℹ️ Belum memilih guru — menampilkan rekap gabungan seluruh guru. Pilih nama guru di atas untuk melihat performa individual.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div id="performa-guru-capture">
+          {/* Ringkasan */}
+          <div className="card mb-4">
+            <div className="card-header"><div className="card-title">📊 Ringkasan — {selectedTeacher ? selectedTeacher.nama : "Semua Guru"}</div></div>
+            <div className="card-body">
+              <div className="grid" style={{ gap:12, gridTemplateColumns:"repeat(7, 1fr)" }}>
+                {[
+                  { icon:"🗒️", label:"Kehadiran Mengajar", value: pgAbsensi.length ? `${absPctPg}%` : "-", bg:"#eff6ff", c:"#1e40af" },
+                  { icon:"📝", label:"Jurnal Mengajar",     value: pgJurnal.length,   bg:"#f5f3ff", c:"#5b21b6" },
+                  { icon:"🎯", label:"Lap. Kegiatan",       value: pgKegiatan.length, bg:"#ecfeff", c:"#0e7490" },
+                  { icon:"📖", label:"Ziyadah Diinput",     value: pgZiyadah.length,  bg:"#ecfdf5", c:"#065f46" },
+                  { icon:"🏆", label:"Target Diinput",      value: pgTarget.length,   bg:"#fee2e2", c:"#991b1b" },
+                  { icon:"📊", label:"Nilai Diinput",       value: pgNilai.length,    bg:"#ede9fe", c:"#5b21b6" },
+                  { icon:"📄", label:"Lap. Harian",         value: pgHarian.length,   bg:"#fef3c7", c:"#92400e" },
+                ].map(s => (
+                  <div key={s.label} style={{ background:s.bg, borderRadius:12, padding:"14px 8px", textAlign:"center" }}>
+                    <div style={{ fontSize:20, marginBottom:4 }}>{s.icon}</div>
+                    <div style={{ fontSize:19, fontWeight:800, color:s.c }}>{s.value}</div>
+                    <div style={{ fontSize:10, color:s.c, opacity:.8, marginTop:2 }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Performa Absensi */}
+          <div className="card mb-4">
+            <div className="card-header"><div className="card-title">🗒️ Performa Absensi Mengajar</div></div>
+            <div className="card-body">
+              {pgAbsensi.length === 0 ? <div className="empty-state">Belum ada data absensi pada rentang ini</div> : (
+                <div>
+                  <div className="flex gap-4 mb-4" style={{ justifyContent:"center" }}>
+                    {STATUS_ABSENSI.map(st => {
+                      const count = pgAbsensi.filter(a => a.status === st).length;
+                      return (
+                        <div key={st} style={{ textAlign:"center", padding:"12px 20px", background:attBgPg[st], borderRadius:12 }}>
+                          <div style={{ fontSize:26, fontWeight:700, color:attColorsPg[st] }}>{count}</div>
+                          <div style={{ fontSize:12, color:attColorsPg[st] }}>{st}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Tanggal</th><th>Guru</th><th>Kelas</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {pgAbsensi.slice(0, 50).map(a => (
+                          <tr key={a.id}><td className="text-sm">{a.tanggal}</td><td style={{ fontWeight:600 }}>{a.teacher?.nama}</td><td><Badge variant="blue">{a.kelas}</Badge></td><td><StatusBadge status={a.status} /></td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Jurnal Mengajar */}
+          <div className="card mb-4">
+            <div className="card-header"><div className="card-title">📝 Jurnal Mengajar</div></div>
+            <div className="card-body">
+              {pgJurnal.length === 0 ? <div className="empty-state">Belum ada jurnal pada rentang ini</div> : (
+                <div className="row-list">
+                  {pgJurnal.map(j => (
+                    <div key={j.id} className="row-item" style={{ alignItems:"flex-start", flexDirection:"column", gap:6 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", width:"100%" }}>
+                        <div>
+                          <div style={{ fontWeight:700 }}>📌 {j.topik}</div>
+                          <div className="text-xs text-muted">{j.teacher?.nama} — {j.kelas} — {j.mataPelajaran}</div>
+                        </div>
+                        <span className="text-xs text-muted">{j.tanggal}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Laporan Kegiatan */}
+          <div className="card mb-4">
+            <div className="card-header"><div className="card-title">🎯 Laporan Kegiatan</div></div>
+            <div className="card-body">
+              {pgKegiatan.length === 0 ? <div className="empty-state">Belum ada laporan kegiatan tercatat oleh guru ini</div> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Tanggal</th><th>Siswa</th><th>Kelas</th><th>Mapel</th><th>Penilaian</th></tr></thead>
+                    <tbody>
+                      {pgKegiatan.slice(0, 50).map(a => {
+                        const s = data.students.find(s => s.id === a.studentId);
+                        return <tr key={a.id}><td className="text-sm">{a.tanggal}</td><td style={{ fontWeight:600 }}>{s?.nama}</td><td><Badge variant="blue">{a.kelas}</Badge></td><td>{a.kategori || a.mataPelajaran}</td><td><StatusBadge status={a.penilaian} /></td></tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Ziyadah */}
+          <div className="card mb-4">
+            <div className="card-header"><div className="card-title">📖 Ziyadah Hafalan</div></div>
+            <div className="card-body">
+              {pgZiyadah.length === 0 ? <div className="empty-state">Belum ada ziyadah tercatat oleh guru ini</div> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Tanggal</th><th>Siswa</th><th>Kelas</th><th>Juz/Surat</th><th>Hasil</th></tr></thead>
+                    <tbody>
+                      {pgZiyadah.slice(0, 50).map(z => {
+                        const s = data.students.find(s => s.id === z.studentId);
+                        return <tr key={z.id}><td className="text-sm">{z.tanggal}</td><td style={{ fontWeight:600 }}>{s?.nama}</td><td><Badge variant="blue">{z.kelas}</Badge></td><td>{z.surat || z.juz}</td><td><StatusBadge status={z.hasil} /></td></tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Target */}
+          <div className="card mb-4">
+            <div className="card-header"><div className="card-title">🏆 Target Pencapaian</div></div>
+            <div className="card-body">
+              {pgTarget.length === 0 ? <div className="empty-state">Belum ada target tercatat oleh guru ini</div> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Tanggal</th><th>Siswa</th><th>Kelas</th><th>Mapel</th><th>Progress</th><th>Hasil</th></tr></thead>
+                    <tbody>
+                      {pgTarget.slice(0, 50).map(t => {
+                        const s = data.students.find(s => s.id === t.studentId);
+                        return <tr key={t.id}><td className="text-sm">{t.tanggal}</td><td style={{ fontWeight:600 }}>{s?.nama}</td><td><Badge variant="blue">{t.kelas}</Badge></td><td>{t.mataPelajaran}</td><td className="text-sm">{t.progressSaatIni}/{t.progressTotal} {t.satuan}</td><td><StatusBadge status={t.hasil} /></td></tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Rekap Nilai */}
+          <div className="card mb-4">
+            <div className="card-header"><div className="card-title">📊 Rekap Nilai Diinput</div></div>
+            <div className="card-body">
+              {pgNilai.length === 0 ? <div className="empty-state">Belum ada nilai tercatat oleh guru ini</div> : (
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Tanggal</th><th>Siswa</th><th>Kelas</th><th>Mapel</th><th>Jenis</th><th>Nilai</th></tr></thead>
+                    <tbody>
+                      {pgNilai.slice(0, 50).map(g => (
+                        <tr key={g.id}><td className="text-sm">{g.tanggal}</td><td style={{ fontWeight:600 }}>{g.student?.nama}</td><td><Badge variant="blue">{g.kelas}</Badge></td><td>{g.mataPelajaran}</td><td><Badge variant="gray">{g.jenisNilai}</Badge></td><td style={{ fontWeight:700 }}>{g.skor}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Laporan Harian */}
+          <div className="card mb-4">
+            <div className="card-header"><div className="card-title">📄 Laporan Harian Diinput</div></div>
+            <div className="card-body">
+              {pgHarian.length === 0 ? <div className="empty-state">Belum ada laporan harian tercatat oleh guru ini</div> : (
+                <div className="row-list">
+                  {pgHarian.slice(0, 50).map(r => {
+                    const s = data.students.find(s => s.id === r.studentId);
+                    return (
+                      <div key={r.id} className="row-item">
+                        <div><div style={{ fontWeight:600 }}>{r.bahasan}</div><div className="text-xs text-muted">{s?.nama} — {r.kelas} — {r.tanggal}</div></div>
+                        <StatusBadge status={r.hasil} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {pgTeacherId && (
+          <div style={{ fontSize:11, color:"#92400e", background:"#fef3c7", borderRadius:8, padding:"10px 14px", marginTop:8 }}>
+            ℹ️ Data Kegiatan, Ziyadah, Target, Nilai, dan Laporan Harian yang diinput sebelum fitur pencatatan guru ini aktif belum tercatat nama gurunya, sehingga tidak muncul di rekap per-guru. Data baru akan otomatis tercatat sesuai guru yang login.
+          </div>
+        )}
       </div>
     );
   }
