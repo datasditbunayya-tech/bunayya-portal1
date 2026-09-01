@@ -468,10 +468,14 @@
     padding: 10px 18px; font-size: 13px; font-weight: 600;
     border: none; border-radius: 10px; cursor: pointer;
     font-family: inherit;
-    transition: all .2s;
+    transition: background-color .1s ease, border-color .1s ease, color .1s ease, box-shadow .1s ease, transform .08s ease;
     white-space: nowrap;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
   }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn:active:not(:disabled) { transform: scale(.96); }
   .btn-primary { background: var(--emerald); color: white; }
   .btn-primary:hover:not(:disabled) { background: var(--emerald-dark); }
   .btn-blue { background: var(--blue); color: white; }
@@ -488,6 +492,7 @@
   .btn-danger:hover:not(:disabled) { background: #a0281f; }
   .btn-sm { padding: 6px 12px; font-size: 12px; }
   .btn-icon { padding: 6px; }
+  button, .select, .input, .textarea { touch-action: manipulation; }
 
   /* ── BADGE ── */
   .badge {
@@ -1227,9 +1232,40 @@ const PENILAIAN_LIST = ["Sangat Baik", "Baik", "Cukup", "Kurang"];
 const JENIS_NILAI = ["Tugas", "UTS", "UAS", "Harian"];
 const JUZ_LIST = ["Semua", "Juz 26", "Juz 27", "Juz 28", "Juz 29", "Juz 30(1)", "Juz 30(2)", "Juz 30(3)"];
 const HASIL_HAFALAN = ["Lancar", "Cukup", "Perlu Latihan"];
+const MONTH_NAMES_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const MONTH_OPTIONS_ID = ["01","02","03","04","05","06","07","08","09","10","11","12"];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const today = () => new Date().toISOString().split("T")[0];
+const currentMonth = () => String(new Date().getMonth() + 1).padStart(2, "0");
+
+// Filter tanggal berdasarkan mode: "bulan" (bulan tertentu), "hari" (hari ini), "semua" (semua data)
+const filterByDateMode = (tgl, mode, bulan, todayStr) => {
+  if (!tgl) return false;
+  if (mode === "semua") return true;
+  if (mode === "hari") return tgl === todayStr;
+  return tgl.slice(5, 7) === bulan;
+};
+
+// ── Simpan ke localStorage secara debounce (async, tidak memblokir UI saat klik) ──
+let __persistTimer = null;
+let __persistPending = null;
+function persistDataAsync(next) {
+  __persistPending = next;
+  if (__persistTimer) clearTimeout(__persistTimer);
+  __persistTimer = setTimeout(() => {
+    try { localStorage.setItem("bunayya_data", JSON.stringify(__persistPending)); } catch(e) {}
+    __persistTimer = null;
+    __persistPending = null;
+  }, 400);
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    if (__persistPending) {
+      try { localStorage.setItem("bunayya_data", JSON.stringify(__persistPending)); } catch(e) {}
+    }
+  });
+}
 const genId = () => `${Date.now()}_${Math.random().toString(36).slice(2,9)}`;
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
@@ -1528,7 +1564,7 @@ function App() {
               ? prev[stateKey]
               : docs;
             const next = { ...prev, [stateKey]: newVal };
-            try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+            persistDataAsync(next);
             return next;
           });
           setLastSync(new Date().toLocaleString("id-ID"));
@@ -1708,7 +1744,7 @@ function App() {
   const patchData = (key, val) => {
     setData(d => {
       const next = { ...d, [key]: val };
-      try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+      persistDataAsync(next);
       return next;
     });
   };
@@ -1777,7 +1813,7 @@ function App() {
     // Update state lokal (tambah ke array) - functional updater agar tidak stale
     setData(d => {
       const next = { ...d, studentAttendance: [...d.studentAttendance, ...newRecords] };
-      try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+      persistDataAsync(next);
       return next;
     });
     // Tulis HANYA item baru ke Firebase
@@ -1801,7 +1837,7 @@ function App() {
     };
     setData(d => {
       const next = { ...d, teacherAttendance: [...d.teacherAttendance, rec] };
-      try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+      persistDataAsync(next);
       return next;
     });
     writeDoc("teacherAttendance", rec);
@@ -1813,7 +1849,7 @@ function App() {
     const t = data.teachers.find(t => t.id === formData.j_teacher);
     if (!t || !formData.j_kelas || !formData.j_topik) { alert("⚠️ Lengkapi data jurnal!"); return; }
     const rec = { id: genId(), teacherId: t.id, tanggal: formData.j_tanggal || today(), kelas: formData.j_kelas, mataPelajaran: formData.j_mapel || "", topik: formData.j_topik, kegiatan: formData.j_kegiatan || "", catatan: formData.j_catatan || "", teacher: { nama: t.nama } };
-    setData(d => { const next = { ...d, journals: [...d.journals, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
+    setData(d => { const next = { ...d, journals: [rec, ...d.journals] }; persistDataAsync(next); return next; });
     writeDoc("journals", rec);
     patchForm({ j_topik: "", j_kegiatan: "", j_catatan: "" });
     alert("✅ Jurnal berhasil disimpan!");
@@ -1823,7 +1859,7 @@ function App() {
     const s = data.students.find(s => s.id === formData.h_siswa);
     if (!s || !formData.h_bahasan || !formData.h_hasil) { alert("⚠️ Lengkapi data harian!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: formData.h_tanggal || today(), kelas: s.class_name, bahasan: formData.h_bahasan, halaman: formData.h_halaman || "", hasil: formData.h_hasil, catatan: formData.h_catatan || "", teacherId: user?.teacherId || null };
-    setData(d => { const next = { ...d, dailyReports: [...d.dailyReports, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
+    setData(d => { const next = { ...d, dailyReports: [...d.dailyReports, rec] }; persistDataAsync(next); return next; });
     writeDoc("dailyReports", rec);
     patchForm({ h_bahasan: "", h_halaman: "", h_catatan: "" });
     alert("✅ Laporan harian berhasil disimpan!");
@@ -1842,7 +1878,7 @@ function App() {
       deskripsi: "",
       teacherId: user?.teacherId || null
     }));
-    setData(d => { const next = { ...d, activities: [...d.activities, ...records] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
+    setData(d => { const next = { ...d, activities: [...d.activities, ...records] }; persistDataAsync(next); return next; });
     writeDocs("activities", records);
     const patch = {};
     students.forEach(s => { patch[`kg_p_${kelas}_${s.id}`] = ""; });
@@ -1868,20 +1904,84 @@ function App() {
       catatan: formData.tr_catatan || "",
       teacherId: user?.teacherId || null
     };
-    setData(d => { const next = { ...d, targets: [...d.targets, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
+    setData(d => { const next = { ...d, targets: [rec, ...d.targets] }; persistDataAsync(next); return next; });
     writeDoc("targets", rec);
     patchForm({ tr_siswa: "", tr_mapel: "", tr_progress_val: "", tr_progress_total: "", tr_satuan: "", tr_hasil: "", tr_catatan: "" });
     alert("✅ Target berhasil disimpan!");
+  };
+
+  const saveTargetKelas = (kelas) => {
+    const mapel   = formData[`tr_mapel_${kelas}`];
+    const tanggal = formData[`tr_tanggal_${kelas}`] || today();
+    if (!mapel) { alert("Pilih mata pelajaran terlebih dahulu!"); return; }
+    const students = data.students.filter(s => s.class_name === kelas);
+    const records  = students.map(s => ({
+      id: genId(), studentId: s.id, tanggal, kelas,
+      mataPelajaran: mapel,
+      progressSaatIni: parseInt(formData[`tr_pv_${kelas}_${s.id}`]) || 0,
+      progressTotal: parseInt(formData[`tr_pt_${kelas}_${s.id}`]) || 100,
+      satuan: formData[`tr_ket_${kelas}_${s.id}`] || "",
+      hasil: formData[`tr_hasil_${kelas}_${s.id}`] || "Lulus",
+      catatan: formData[`tr_cat_${kelas}_${s.id}`] || "",
+      teacherId: user?.teacherId || null
+    }));
+    setData(d => { const next = { ...d, targets: [...records, ...d.targets] }; persistDataAsync(next); return next; });
+    writeDocs("targets", records);
+    const patch = { [`tr_mapel_${kelas}`]: "" };
+    students.forEach(s => {
+      patch[`tr_hasil_${kelas}_${s.id}`] = "";
+      patch[`tr_pv_${kelas}_${s.id}`] = "";
+      patch[`tr_pt_${kelas}_${s.id}`] = "";
+      patch[`tr_ket_${kelas}_${s.id}`] = "";
+      patch[`tr_cat_${kelas}_${s.id}`] = "";
+    });
+    patchForm(patch);
+    alert(`✅ ${records.length} target pencapaian berhasil disimpan!`);
   };
 
   const saveZiyadah = () => {
     const s = data.students.find(s => s.id === formData.z_siswa);
     if (!s || !formData.z_juz || !formData.z_hasil) { alert("⚠️ Lengkapi data ziyadah!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: formData.z_tanggal || today(), kelas: s.class_name, juz: formData.z_juz, surat: formData.z_surat || "", progress: formData.z_progress || "", hasil: formData.z_hasil, catatan: formData.z_catatan || "", teacherId: user?.teacherId || null };
-    setData(d => { const next = { ...d, ziyadah: [...d.ziyadah, rec] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
+    setData(d => { const next = { ...d, ziyadah: [rec, ...d.ziyadah] }; persistDataAsync(next); return next; });
     writeDoc("ziyadah", rec);
     patchForm({ z_juz: "", z_surat: "", z_progress: "", z_catatan: "" });
     alert("✅ Ziyadah berhasil disimpan!");
+  };
+
+  const saveZiyadahKelas = (kelas) => {
+    const tanggal = formData[`z_tanggal_${kelas}`] || today();
+    const students = data.students.filter(s => s.class_name === kelas);
+    const records  = students.map(s => {
+      const pv = parseInt(formData[`z_pv_${kelas}_${s.id}`]) || 0;
+      const pt = parseInt(formData[`z_pt_${kelas}_${s.id}`]) || 100;
+      return {
+        id: genId(), studentId: s.id, tanggal, kelas,
+        juz: formData[`z_juz_${kelas}_${s.id}`] || "",
+        surat: formData[`z_surat_${kelas}_${s.id}`] || "",
+        hasil: formData[`z_hasil_${kelas}_${s.id}`] || "Lulus",
+        progressSaatIni: pv,
+        progressTotal: pt,
+        progress: `${pv}/${pt}`,
+        keterangan: formData[`z_ket_${kelas}_${s.id}`] || "",
+        catatan: formData[`z_cat_${kelas}_${s.id}`] || "",
+        teacherId: user?.teacherId || null
+      };
+    });
+    setData(d => { const next = { ...d, ziyadah: [...records, ...d.ziyadah] }; persistDataAsync(next); return next; });
+    writeDocs("ziyadah", records);
+    const patch = { [`z_tanggal_${kelas}`]: "" };
+    students.forEach(s => {
+      patch[`z_juz_${kelas}_${s.id}`] = "";
+      patch[`z_surat_${kelas}_${s.id}`] = "";
+      patch[`z_hasil_${kelas}_${s.id}`] = "";
+      patch[`z_pv_${kelas}_${s.id}`] = "";
+      patch[`z_pt_${kelas}_${s.id}`] = "";
+      patch[`z_ket_${kelas}_${s.id}`] = "";
+      patch[`z_cat_${kelas}_${s.id}`] = "";
+    });
+    patchForm(patch);
+    alert(`✅ ${records.length} ziyadah hafalan berhasil disimpan!`);
   };
 
   const saveNilaiKelas = (kelas) => {
@@ -1894,7 +1994,7 @@ function App() {
       .filter(s => formData[`nm_v_${kelas}_${s.id}`])
       .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama }, teacherId: user?.teacherId || null }));
     if (!records.length) { alert("Masukkan nilai untuk minimal satu siswa!"); return; }
-    setData(d => { const next = { ...d, grades: [...d.grades, ...records] }; try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {} return next; });
+    setData(d => { const next = { ...d, grades: [...d.grades, ...records] }; persistDataAsync(next); return next; });
     writeDocs("grades", records);
     const patch = {};
     students.forEach(s => { patch[`nm_v_${kelas}_${s.id}`] = ""; });
@@ -2032,6 +2132,7 @@ function App() {
     { id: "rekap-nilai", label: "📈 Rekap Nilai" },
     { id: "cetak-rapor", label: "📄 Cetak Rapor" },
     { id: "performa-guru", label: "🏆 Performa Guru" },
+    { id: "diagram-kepatuhan", label: "📅 Diagram Kepatuhan Guru" },
     ...(canAccess("master-guru") ? [{ id: "master-guru", label: "📚 Master Guru" }] : []),
     ...(canAccess("kelola-pintasan") ? [{ id: "kelola-pintasan", label: "🔗 Pintasan" }] : []),
     ...(canAccess("pengaturan-mapel") ? [{ id: "pengaturan-mapel", label: "⚙️ Mapel" }] : []),
@@ -2195,7 +2296,7 @@ function App() {
           <PortalGuru menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} writeDoc={writeDoc} />
         )}
         {portal === "siswa" && (
-          <PortalSiswa menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveZiyadah={saveZiyadah} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
+          <PortalSiswa menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveTargetKelas={saveTargetKelas} saveZiyadah={saveZiyadah} saveZiyadahKelas={saveZiyadahKelas} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
         )}
         {portal === "wali" && (
           <PortalWali menu={menu} data={data} formData={formData} patchForm={patchForm} user={user} />
@@ -2391,85 +2492,199 @@ function LoginPage({ loginRole, setLoginRole, loginForm, setLoginForm, loginErro
   );
 }
 
+// ── Komponen diagram batang (top-level, agar tidak dibuat ulang tiap render) ──
+const BarChart = ({ items, color = "#1d7a5f", maxOverride }) => {
+  const W = 52, GAP = 10, H = 130, PAD_LEFT = 32, PAD_BOT = 72, PAD_TOP = 16;
+  const totalMax = items.reduce((a,i) => a + i.val, 0);
+
+  // Jika semua nilai 0, tampilkan pesan kosong — tidak render grafik
+  if (totalMax === 0) return (
+    <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>
+      📭 Belum ada data pada rentang tanggal ini
+    </div>
+  );
+
+  const rawMax = maxOverride || Math.max(...items.map(i => i.val), 1);
+
+  // Garis Y dinamis — bertambah sesuai data
+  const niceStep = (max) => {
+    if (max <= 5)   return 1;
+    if (max <= 10)  return 2;
+    if (max <= 20)  return 5;
+    if (max <= 50)  return 10;
+    if (max <= 100) return 20;
+    return Math.ceil(max / 5 / 10) * 10;
+  };
+  const step   = niceStep(rawMax);
+  const maxVal = Math.ceil(rawMax / step) * step;
+  const yTicks = [];
+  for (let v = 0; v <= maxVal; v += step) yTicks.push(v);
+
+  const totalW = items.length * W + (items.length - 1) * GAP + PAD_LEFT + 16;
+
+  return (
+    <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)}
+      style={{ overflow:"visible", display:"block" }}>
+
+      {/* Grid lines horizontal — dinamis */}
+      {yTicks.map(v => {
+        const y = PAD_TOP + H - (v / maxVal) * H;
+        return (
+          <g key={v}>
+            <line x1={PAD_LEFT} y1={y} x2={totalW} y2={y} stroke="#e8e8e8" strokeWidth="1" strokeDasharray={v===0?"0":"4 3"} />
+            <text x={PAD_LEFT-4} y={y+4} textAnchor="end" fontSize="9" fill="#999">{v}</text>
+          </g>
+        );
+      })}
+
+      {/* Bars */}
+      {items.map((item, i) => {
+        const x    = PAD_LEFT + i * (W + GAP);
+        const barH = maxVal > 0 ? Math.max((item.val/maxVal)*H, item.val>0?4:0) : 0;
+        const barY = PAD_TOP + H - barH;
+        return (
+          <g key={i}>
+            <rect x={x+3} y={barY+3} width={W} height={barH} rx="5" fill="rgba(0,0,0,.06)" />
+            <rect x={x} y={barY} width={W} height={barH} rx="5" fill={color} />
+            {item.val > 0 && (
+              <text x={x+W/2} y={barY-6} textAnchor="middle" fontSize="14" fontWeight="900" fill={color}>{item.val}</text>
+            )}
+            {/* Label miring -45 derajat */}
+            <text x={x+W/2} y={PAD_TOP+H+8} textAnchor="end" fontSize="14" fontWeight="900" fill="#333"
+              transform={"rotate(-45,"+(x+W/2)+","+(PAD_TOP+H+8)+")"}>
+              {item.lbl}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Baseline */}
+      <line x1={PAD_LEFT} y1={PAD_TOP+H} x2={totalW} y2={PAD_TOP+H} stroke="#ccc" strokeWidth="1.5" />
+    </svg>
+  );
+};
+
+const ChartCard = ({ title, items, color, maxOverride }) => (
+  <div className="card">
+    <div className="card-header">
+      <div className="card-title">{title}</div>
+      <div className="flex gap-2 items-center">
+        <span style={{ fontSize:12, color:"#888" }}>{items.reduce((a,i)=>a+i.val,0)} total</span>
+      </div>
+    </div>
+    <div className="card-body" style={{ overflowX:"auto" }}>
+      {items.length === 0
+        ? <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>📭 Belum ada data</div>
+        : <BarChart items={items} color={color} maxOverride={maxOverride} />
+      }
+    </div>
+  </div>
+);
+
+// ── Diagram batang SVG (dipakai untuk perbandingan antar guru, top-level) ──
+const PGBarChart = ({ items, color = "#1d7a5f" }) => {
+  const W = 52, GAP = 10, H = 130, PAD_LEFT = 32, PAD_BOT = 72, PAD_TOP = 16;
+  const total = items.reduce((a,i) => a + i.val, 0);
+  if (total === 0) return <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>📭 Belum ada data</div>;
+  const rawMax = Math.max(...items.map(i => i.val), 1);
+  const niceStep = (max) => (max<=5?1: max<=10?2: max<=20?5: max<=50?10: max<=100?20: Math.ceil(max/5/10)*10);
+  const step = niceStep(rawMax);
+  const maxVal = Math.ceil(rawMax / step) * step;
+  const yTicks = []; for (let v = 0; v <= maxVal; v += step) yTicks.push(v);
+  const totalW = items.length * W + (items.length - 1) * GAP + PAD_LEFT + 16;
+  return (
+    <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)} style={{ overflow:"visible", display:"block" }}>
+      {yTicks.map(v => {
+        const y = PAD_TOP + H - (v / maxVal) * H;
+        return (
+          <g key={v}>
+            <line x1={PAD_LEFT} y1={y} x2={totalW} y2={y} stroke="#e8e8e8" strokeWidth="1" strokeDasharray={v===0?"0":"4 3"} />
+            <text x={PAD_LEFT-4} y={y+4} textAnchor="end" fontSize="9" fill="#999">{v}</text>
+          </g>
+        );
+      })}
+      {items.map((item, i) => {
+        const x = PAD_LEFT + i * (W + GAP);
+        const barH = maxVal > 0 ? Math.max((item.val/maxVal)*H, item.val>0?4:0) : 0;
+        const barY = PAD_TOP + H - barH;
+        return (
+          <g key={i}>
+            <rect x={x+3} y={barY+3} width={W} height={barH} rx="5" fill="rgba(0,0,0,.06)" />
+            <rect x={x} y={barY} width={W} height={barH} rx="5" fill={color} />
+            {item.val > 0 && <text x={x+W/2} y={barY-6} textAnchor="middle" fontSize="14" fontWeight="900" fill={color}>{item.val}</text>}
+            <text x={x+W/2} y={PAD_TOP+H+8} textAnchor="end" fontSize="12" fontWeight="700" fill="#333"
+              transform={"rotate(-45,"+(x+W/2)+","+(PAD_TOP+H+8)+")"}>{item.lbl}</text>
+          </g>
+        );
+      })}
+      <line x1={PAD_LEFT} y1={PAD_TOP+H} x2={totalW} y2={PAD_TOP+H} stroke="#ccc" strokeWidth="1.5" />
+    </svg>
+  );
+};
+
+// ── Diagram garis SVG (dipakai untuk tren per tanggal guru terpilih, top-level) ──
+const PGLineChart = ({ items, color = "#1d7a5f" }) => {
+  const H = 140, PAD_LEFT = 34, PAD_BOT = 60, PAD_TOP = 20, MIN_STEP_X = 56;
+  const total = items.reduce((a,i)=>a+i.val,0);
+  if (items.length === 0 || total === 0) return <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>📭 Belum ada data pada rentang ini</div>;
+  const rawMax = Math.max(...items.map(i => i.val), 1);
+  const niceStep = (max) => (max<=5?1: max<=10?2: max<=20?5: max<=50?10: Math.ceil(max/5/10)*10);
+  const step = niceStep(rawMax);
+  const maxVal = Math.ceil(rawMax / step) * step;
+  const yTicks = []; for (let v = 0; v <= maxVal; v += step) yTicks.push(v);
+  const totalW = Math.max(items.length * MIN_STEP_X, 260) + PAD_LEFT + 16;
+  const stepX = items.length > 1 ? (totalW - PAD_LEFT - 16) / (items.length - 1) : 0;
+  const points = items.map((item, i) => ({
+    x: PAD_LEFT + i * stepX,
+    y: PAD_TOP + H - (maxVal > 0 ? (item.val/maxVal)*H : 0),
+    ...item
+  }));
+  const pathD = points.map((p,i) => (i===0 ? "M":"L") + p.x + " " + p.y).join(" ");
+  return (
+    <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)} style={{ overflow:"visible", display:"block" }}>
+      {yTicks.map(v => {
+        const y = PAD_TOP + H - (v / maxVal) * H;
+        return (
+          <g key={v}>
+            <line x1={PAD_LEFT} y1={y} x2={totalW} y2={y} stroke="#e8e8e8" strokeWidth="1" strokeDasharray={v===0?"0":"4 3"} />
+            <text x={PAD_LEFT-4} y={y+4} textAnchor="end" fontSize="9" fill="#999">{v}</text>
+          </g>
+        );
+      })}
+      <path d={pathD} fill="none" stroke={color} strokeWidth="2.5" />
+      {points.map((p,i) => (
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r="4" fill={color} />
+          {p.val > 0 && <text x={p.x} y={p.y-10} textAnchor="middle" fontSize="12" fontWeight="900" fill={color}>{p.val}</text>}
+          <text x={p.x} y={PAD_TOP+H+8} textAnchor="end" fontSize="11" fontWeight="700" fill="#333"
+            transform={"rotate(-45,"+p.x+","+(PAD_TOP+H+8)+")"}>{p.lbl}</text>
+        </g>
+      ))}
+      <line x1={PAD_LEFT} y1={PAD_TOP+H} x2={totalW} y2={PAD_TOP+H} stroke="#ccc" strokeWidth="1.5" />
+    </svg>
+  );
+};
+
+const PGChartCard = ({ title, items, color, type }) => (
+  <div className="card mb-4">
+    <div className="card-header">
+      <div className="card-title">{title}</div>
+      <span style={{ fontSize:12, color:"#888" }}>{items.reduce((a,i)=>a+i.val,0)} total</span>
+    </div>
+    <div className="card-body" style={{ overflowX:"auto" }}>
+      {type === "line" ? <PGLineChart items={items} color={color} /> : <PGBarChart items={items} color={color} />}
+    </div>
+  </div>
+);
+
 // ─── PORTAL GURU ─────────────────────────────────────────────────────────────
 function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selectedKelas, setSelectedKelas, searchQuery, setSearchQuery, user, canAccess, saveAbsensiSiswa, saveAbsensiGuru, saveJurnal, saveNilaiKelas, deleteItem, loginConfig = {}, saveLoginConfig, writeDoc }) {
 
   const todayStr = today();
+  const currentMonthStr = String(new Date().getMonth() + 1).padStart(2, "0");
 
   // Dashboard
   if (menu === "dashboard") {
-
-    // ── BarChart vertikal SVG ─────────────────────────────────────────────
-    const BarChart = ({ items, color = "#1d7a5f", maxOverride }) => {
-      const W = 52, GAP = 10, H = 130, PAD_LEFT = 32, PAD_BOT = 72, PAD_TOP = 16;
-      const totalMax = items.reduce((a,i) => a + i.val, 0);
-
-      // Jika semua nilai 0, tampilkan pesan kosong — tidak render grafik
-      if (totalMax === 0) return (
-        <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>
-          📭 Belum ada data pada rentang tanggal ini
-        </div>
-      );
-
-      const rawMax = maxOverride || Math.max(...items.map(i => i.val), 1);
-
-      // Garis Y dinamis — bertambah sesuai data
-      const niceStep = (max) => {
-        if (max <= 5)   return 1;
-        if (max <= 10)  return 2;
-        if (max <= 20)  return 5;
-        if (max <= 50)  return 10;
-        if (max <= 100) return 20;
-        return Math.ceil(max / 5 / 10) * 10;
-      };
-      const step   = niceStep(rawMax);
-      const maxVal = Math.ceil(rawMax / step) * step;
-      const yTicks = [];
-      for (let v = 0; v <= maxVal; v += step) yTicks.push(v);
-
-      const totalW = items.length * W + (items.length - 1) * GAP + PAD_LEFT + 16;
-
-      return (
-        <svg width="100%" viewBox={"0 0 " + totalW + " " + (H + PAD_BOT + PAD_TOP)}
-          style={{ overflow:"visible", display:"block" }}>
-
-          {/* Grid lines horizontal — dinamis */}
-          {yTicks.map(v => {
-            const y = PAD_TOP + H - (v / maxVal) * H;
-            return (
-              <g key={v}>
-                <line x1={PAD_LEFT} y1={y} x2={totalW} y2={y} stroke="#e8e8e8" strokeWidth="1" strokeDasharray={v===0?"0":"4 3"} />
-                <text x={PAD_LEFT-4} y={y+4} textAnchor="end" fontSize="9" fill="#999">{v}</text>
-              </g>
-            );
-          })}
-
-          {/* Bars */}
-          {items.map((item, i) => {
-            const x    = PAD_LEFT + i * (W + GAP);
-            const barH = maxVal > 0 ? Math.max((item.val/maxVal)*H, item.val>0?4:0) : 0;
-            const barY = PAD_TOP + H - barH;
-            return (
-              <g key={i}>
-                <rect x={x+3} y={barY+3} width={W} height={barH} rx="5" fill="rgba(0,0,0,.06)" />
-                <rect x={x} y={barY} width={W} height={barH} rx="5" fill={color} />
-                {item.val > 0 && (
-                  <text x={x+W/2} y={barY-6} textAnchor="middle" fontSize="14" fontWeight="900" fill={color}>{item.val}</text>
-                )}
-                {/* Label miring -45 derajat */}
-                <text x={x+W/2} y={PAD_TOP+H+8} textAnchor="end" fontSize="14" fontWeight="900" fill="#333"
-                  transform={"rotate(-45,"+(x+W/2)+","+(PAD_TOP+H+8)+")"}>
-                  {item.lbl}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Baseline */}
-          <line x1={PAD_LEFT} y1={PAD_TOP+H} x2={totalW} y2={PAD_TOP+H} stroke="#ccc" strokeWidth="1.5" />
-        </svg>
-      );
-    };
 
     // ── Data chart ───────────────────────────────────────────────────────
     const kelasList = KELAS_LIST.filter(k => k !== "Semua");
@@ -2491,23 +2706,6 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
       harian:"#d97706", kegiatan:"#0891b2", target:"#dc2626",
       ziyadah:"#059669", nilai:"#9333ea"
     };
-
-    const ChartCard = ({ title, items, color, maxOverride }) => (
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">{title}</div>
-          <div className="flex gap-2 items-center">
-            <span style={{ fontSize:12, color:"#888" }}>{items.reduce((a,i)=>a+i.val,0)} total</span>
-          </div>
-        </div>
-        <div className="card-body" style={{ overflowX:"auto" }}>
-          {items.length === 0
-            ? <div style={{ padding:"24px", textAlign:"center", color:"#ccc", fontSize:13 }}>📭 Belum ada data</div>
-            : <BarChart items={items} color={color} maxOverride={maxOverride} />
-          }
-        </div>
-      </div>
-    );
 
     return (
       <div>
@@ -2879,58 +3077,69 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
   // Jurnal Mengajar
   if (menu === "jurnal") {
-    const genKegiatan = (topik, mapel) => {
-      const sets = [
-        [
+    // Setiap "gaya" berisi Kegiatan (5 Uraian) & Catatan yang saling berpasangan,
+    // sehingga hasil generate selalu konsisten satu sama lain.
+    const jurnalStyles = [
+      {
+        kegiatan: (topik, mapel) => [
           `1. Pembukaan dengan doa bersama dan apersepsi materi "${topik}"`,
           `2. Guru menjelaskan konsep dasar ${topik} secara interaktif`,
           `3. Siswa mengerjakan latihan mandiri tentang ${topik}`,
           `4. Diskusi kelompok dan presentasi hasil belajar`,
           `5. Penutup: refleksi, kesimpulan, dan pemberian tugas rumah`
         ],
-        [
+        catatan: (topik) => `Sebagian besar siswa memahami materi ${topik} dengan baik.\nPerlu pengulangan pada beberapa siswa yang masih kesulitan.`
+      },
+      {
+        kegiatan: (topik, mapel) => [
           `1. Salam pembuka, doa, dan review materi ${mapel || "sebelumnya"}`,
           `2. Penyampaian tujuan pembelajaran topik "${topik}"`,
           `3. Demonstrasi dan tanya jawab langsung bersama siswa`,
           `4. Siswa mempraktikkan secara berpasangan atau berkelompok`,
           `5. Evaluasi lisan dan penutup dengan motivasi belajar`
         ],
-        [
+        catatan: (topik) => `Pembelajaran ${topik} berjalan kondusif dan antusias.\nBeberapa siswa perlu pendampingan lebih lanjut di rumah.`
+      },
+      {
+        kegiatan: (topik, mapel) => [
           `1. Ice breaking dan motivasi awal sebelum masuk materi`,
           `2. Pengantar topik "${topik}" dengan media visual/gambar`,
           `3. Penjelasan bertahap disertai contoh nyata dalam kehidupan`,
           `4. Kuis singkat untuk mengukur pemahaman siswa`,
           `5. Penutup: doa, pengumuman tugas, dan salam`
         ],
-        [
+        catatan: (topik) => `Respon siswa terhadap topik ${topik} sangat positif.\nDisarankan latihan tambahan agar pemahaman semakin kuat.`
+      },
+      {
+        kegiatan: (topik, mapel) => [
           `1. Pembukaan: doa, absensi, dan cek kesiapan belajar`,
           `2. Apersepsi: mengaitkan "${topik}" dengan pengalaman siswa`,
           `3. Eksplorasi materi melalui diskusi dan tanya jawab aktif`,
           `4. Penugasan tertulis/lisan sesuai indikator pembelajaran`,
           `5. Simpulan bersama dan penguatan oleh guru, lalu salam penutup`
         ],
-        [
+        catatan: (topik) => `Materi ${topik} tersampaikan sesuai rencana pembelajaran.\nSiswa aktif bertanya dan berdiskusi selama kegiatan.`
+      },
+      {
+        kegiatan: (topik, mapel) => [
           `1. Berdoa, mengecek kehadiran, dan menyiapkan bahan ajar`,
           `2. Stimulasi: guru memberikan pertanyaan pemantik tentang "${topik}"`,
           `3. Siswa mengamati, membaca, atau mendengarkan penjelasan materi`,
           `4. Latihan soal / praktik langsung sesuai topik ${topik}`,
           `5. Feedback dari guru, koreksi bersama, dan penutup`
         ],
-      ];
-      const pick = sets[Math.floor(Math.random() * sets.length)];
-      return pick.join("\n");
-    };
+        catatan: (topik) => `Proses pembelajaran ${topik} berjalan efektif.\nPerlu tindak lanjut untuk siswa yang belum mencapai KKM.`
+      },
+    ];
 
-    const genCatatan = (topik) => {
-      const notes = [
-        `Sebagian besar siswa memahami materi ${topik} dengan baik.\nPerlu pengulangan pada beberapa siswa yang masih kesulitan.`,
-        `Pembelajaran ${topik} berjalan kondusif dan antusias.\nBeberapa siswa perlu pendampingan lebih lanjut di rumah.`,
-        `Respon siswa terhadap topik ${topik} sangat positif.\nDisarankan latihan tambahan agar pemahaman semakin kuat.`,
-        `Materi ${topik} tersampaikan sesuai rencana pembelajaran.\nSiswa aktif bertanya dan berdiskusi selama kegiatan.`,
-        `Proses pembelajaran ${topik} berjalan efektif.\nPerlu tindak lanjut untuk siswa yang belum mencapai KKM.`,
-        `Siswa cukup antusias mengikuti materi ${topik} hari ini.\nAkan dilakukan remedial pada pertemuan berikutnya jika diperlukan.`,
-      ];
-      return notes[Math.floor(Math.random() * notes.length)];
+    // Menghasilkan Kegiatan (5 Uraian) & Catatan dari gaya yang SAMA,
+    // supaya laporan yang tersimpan selalu sesuai dengan hasil generate.
+    const genJurnal = (topik, mapel) => {
+      const style = jurnalStyles[Math.floor(Math.random() * jurnalStyles.length)];
+      return {
+        kegiatan: style.kegiatan(topik, mapel).join("\n"),
+        catatan: style.catatan(topik)
+      };
     };
     return (
       <div className="card">
@@ -2967,10 +3176,11 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
               <div style={{ display:"flex", gap:8 }}>
                 <input className="input" placeholder="Contoh: Surat Al-Fatihah, Perkalian 1-10..." value={formData.j_topik || ""} onChange={e => {
                   const topik = e.target.value;
-                  patchForm({ j_topik: topik, j_kegiatan: topik ? genKegiatan(topik, formData.j_mapel) : "", j_catatan: topik ? genCatatan(topik) : "" });
+                  const gen = topik ? genJurnal(topik, formData.j_mapel) : { kegiatan: "", catatan: "" };
+                  patchForm({ j_topik: topik, j_kegiatan: gen.kegiatan, j_catatan: gen.catatan });
                 }} style={{ flex:1 }} />
                 {formData.j_topik && (
-                  <button type="button" title="Acak ulang isi" onClick={() => patchForm({ j_kegiatan: genKegiatan(formData.j_topik, formData.j_mapel), j_catatan: genCatatan(formData.j_topik) })}
+                  <button type="button" title="Acak ulang isi" onClick={() => { const gen = genJurnal(formData.j_topik, formData.j_mapel); patchForm({ j_kegiatan: gen.kegiatan, j_catatan: gen.catatan }); }}
                     style={{ padding:"0 14px", fontSize:18, background:"#e8f5e9", border:"1.5px solid #a7f3d0", borderRadius:8, cursor:"pointer", whiteSpace:"nowrap" }}>🔀</button>
                 )}
               </div>
@@ -3006,20 +3216,21 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
                 </select>
               </div>
               <div className="select-wrap" style={{width:150}}>
-                <select className="select" style={{fontSize:13}} value={formData.rw_jrn_bulan || ""} onChange={e => patchForm({rw_jrn_bulan: e.target.value})}>
-                  <option value="">Semua Bulan</option>
+                <select className="select" style={{fontSize:13}} value={formData.rw_jrn_bulan !== undefined ? formData.rw_jrn_bulan : currentMonthStr} onChange={e => patchForm({rw_jrn_bulan: e.target.value})}>
                   {["01","02","03","04","05","06","07","08","09","10","11","12"].map(m => (
                     <option key={m} value={m}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(m)-1]}</option>
                   ))}
+                  <option value="">Semua Bulan</option>
                 </select>
               </div>
             </div>
             <div id="tbl-jurnal" className="row-list">
-              {(() => { const fj = data.journals.filter(j =>
+              {(() => { const jrnBulanAktif = formData.rw_jrn_bulan !== undefined ? formData.rw_jrn_bulan : currentMonthStr;
+                const fj = data.journals.filter(j =>
                 (formData.rw_jrn_kelas === "Semua" || !formData.rw_jrn_kelas || j.kelas === formData.rw_jrn_kelas) &&
                 (!formData.rw_jrn_nama || j.teacherId === formData.rw_jrn_nama) &&
-                (!formData.rw_jrn_bulan || (j.tanggal && j.tanggal.slice(5,7) === formData.rw_jrn_bulan))
-              ); return fj.length === 0
+                (!jrnBulanAktif || (j.tanggal && j.tanggal.slice(5,7) === jrnBulanAktif))
+              ).slice().sort((a, b) => String(b.id).localeCompare(String(a.id))); return fj.length === 0
                 ? <div className="empty-state" style={{padding:20,textAlign:"center",color:"#999"}}>Belum ada data jurnal</div>
                 : fj.map(j => (
                 <div key={j.id} className="row-item" style={{ alignItems: "flex-start", flexDirection: "column", gap: 8 }}>
@@ -3412,6 +3623,52 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
     const attColorsPg = { Hadir: "#065f46", Sakit: "#92400e", Izin: "#1e40af", Alpa: "#991b1b" };
     const attBgPg     = { Hadir: "#d1fae5", Sakit: "#fef3c7", Izin: "#dbeafe", Alpa: "#fee2e2" };
 
+    const PG_CHART_COLORS = {
+      absensi:"#1d7a5f", jurnal:"#7c3aed", kegiatan:"#0891b2",
+      ziyadah:"#059669", target:"#dc2626", nilai:"#9333ea", harian:"#d97706"
+    };
+
+    // ── Data: perbandingan antar guru (ketika "Semua Guru") — dibangun 1x pass, bukan per-guru ──
+    const guruListPg = data.teachers;
+    const countByTeacher = (arr, dateKey = "tanggal") => {
+      const m = new Map();
+      for (const it of arr) {
+        if (!inPgRange(it[dateKey])) continue;
+        m.set(it.teacherId, (m.get(it.teacherId) || 0) + 1);
+      }
+      return m;
+    };
+    const absensiRecMap = new Map();   // teacherId -> { total, hadir }
+    for (const a of data.teacherAttendance) {
+      if (!inPgRange(a.tanggal)) continue;
+      const cur = absensiRecMap.get(a.teacherId) || { total: 0, hadir: 0 };
+      cur.total++; if (a.status === "Hadir") cur.hadir++;
+      absensiRecMap.set(a.teacherId, cur);
+    }
+    const jurnalMap   = countByTeacher(data.journals);
+    const kegiatanMap = countByTeacher(data.activities);
+    const ziyadahMap  = countByTeacher(data.ziyadah);
+    const targetMap   = countByTeacher(data.targets);
+    const nilaiMap     = countByTeacher(data.grades);
+    const harianMap    = countByTeacher(data.dailyReports);
+
+    const absensiPctPerGuru = guruListPg.map(t => {
+      const rec = absensiRecMap.get(t.id);
+      return { lbl: t.nama, val: rec && rec.total ? Math.round((rec.hadir/rec.total)*100) : 0 };
+    });
+    const jurnalPerGuruPg   = guruListPg.map(t => ({ lbl: t.nama, val: jurnalMap.get(t.id) || 0 }));
+    const kegiatanPerGuruPg = guruListPg.map(t => ({ lbl: t.nama, val: kegiatanMap.get(t.id) || 0 }));
+    const ziyadahPerGuruPg  = guruListPg.map(t => ({ lbl: t.nama, val: ziyadahMap.get(t.id) || 0 }));
+    const targetPerGuruPg   = guruListPg.map(t => ({ lbl: t.nama, val: targetMap.get(t.id) || 0 }));
+    const nilaiPerGuruPg    = guruListPg.map(t => ({ lbl: t.nama, val: nilaiMap.get(t.id) || 0 }));
+    const harianPerGuruPg   = guruListPg.map(t => ({ lbl: t.nama, val: harianMap.get(t.id) || 0 }));
+
+    // ── Data: tren per tanggal (ketika guru tertentu dipilih) — 1x pass ────
+    const trenMap = new Map();
+    const bumpTren = arr => { for (const it of arr) trenMap.set(it.tanggal, (trenMap.get(it.tanggal) || 0) + 1); };
+    bumpTren(pgAbsensi); bumpTren(pgJurnal); bumpTren(pgKegiatan); bumpTren(pgZiyadah); bumpTren(pgTarget); bumpTren(pgNilai); bumpTren(pgHarian);
+    const pgTrenPerTanggal = Array.from(trenMap.keys()).sort().map(tgl => ({ lbl: tgl, val: trenMap.get(tgl) }));
+
     return (
       <div>
         {/* Selector & Filter */}
@@ -3481,151 +3738,18 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
             </div>
           </div>
 
-          {/* Performa Absensi */}
+          {/* Ringkasan Absensi (breakdown status) */}
           <div className="card mb-4">
-            <div className="card-header"><div className="card-title">🗒️ Performa Absensi Mengajar</div></div>
+            <div className="card-header"><div className="card-title">🗒️ Ringkasan Absensi Mengajar</div></div>
             <div className="card-body">
               {pgAbsensi.length === 0 ? <div className="empty-state">Belum ada data absensi pada rentang ini</div> : (
-                <div>
-                  <div className="flex gap-4 mb-4" style={{ justifyContent:"center" }}>
-                    {STATUS_ABSENSI.map(st => {
-                      const count = pgAbsensi.filter(a => a.status === st).length;
-                      return (
-                        <div key={st} style={{ textAlign:"center", padding:"12px 20px", background:attBgPg[st], borderRadius:12 }}>
-                          <div style={{ fontSize:26, fontWeight:700, color:attColorsPg[st] }}>{count}</div>
-                          <div style={{ fontSize:12, color:attColorsPg[st] }}>{st}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="table-wrap">
-                    <table>
-                      <thead><tr><th>Tanggal</th><th>Guru</th><th>Kelas</th><th>Status</th></tr></thead>
-                      <tbody>
-                        {pgAbsensi.slice(0, 50).map(a => (
-                          <tr key={a.id}><td className="text-sm">{a.tanggal}</td><td style={{ fontWeight:600 }}>{a.teacher?.nama}</td><td><Badge variant="blue">{a.kelas}</Badge></td><td><StatusBadge status={a.status} /></td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Jurnal Mengajar */}
-          <div className="card mb-4">
-            <div className="card-header"><div className="card-title">📝 Jurnal Mengajar</div></div>
-            <div className="card-body">
-              {pgJurnal.length === 0 ? <div className="empty-state">Belum ada jurnal pada rentang ini</div> : (
-                <div className="row-list">
-                  {pgJurnal.map(j => (
-                    <div key={j.id} className="row-item" style={{ alignItems:"flex-start", flexDirection:"column", gap:6 }}>
-                      <div style={{ display:"flex", justifyContent:"space-between", width:"100%" }}>
-                        <div>
-                          <div style={{ fontWeight:700 }}>📌 {j.topik}</div>
-                          <div className="text-xs text-muted">{j.teacher?.nama} — {j.kelas} — {j.mataPelajaran}</div>
-                        </div>
-                        <span className="text-xs text-muted">{j.tanggal}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Laporan Kegiatan */}
-          <div className="card mb-4">
-            <div className="card-header"><div className="card-title">🎯 Laporan Kegiatan</div></div>
-            <div className="card-body">
-              {pgKegiatan.length === 0 ? <div className="empty-state">Belum ada laporan kegiatan tercatat oleh guru ini</div> : (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Tanggal</th><th>Siswa</th><th>Kelas</th><th>Mapel</th><th>Penilaian</th></tr></thead>
-                    <tbody>
-                      {pgKegiatan.slice(0, 50).map(a => {
-                        const s = data.students.find(s => s.id === a.studentId);
-                        return <tr key={a.id}><td className="text-sm">{a.tanggal}</td><td style={{ fontWeight:600 }}>{s?.nama}</td><td><Badge variant="blue">{a.kelas}</Badge></td><td>{a.kategori || a.mataPelajaran}</td><td><StatusBadge status={a.penilaian} /></td></tr>;
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Ziyadah */}
-          <div className="card mb-4">
-            <div className="card-header"><div className="card-title">📖 Ziyadah Hafalan</div></div>
-            <div className="card-body">
-              {pgZiyadah.length === 0 ? <div className="empty-state">Belum ada ziyadah tercatat oleh guru ini</div> : (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Tanggal</th><th>Siswa</th><th>Kelas</th><th>Juz/Surat</th><th>Hasil</th></tr></thead>
-                    <tbody>
-                      {pgZiyadah.slice(0, 50).map(z => {
-                        const s = data.students.find(s => s.id === z.studentId);
-                        return <tr key={z.id}><td className="text-sm">{z.tanggal}</td><td style={{ fontWeight:600 }}>{s?.nama}</td><td><Badge variant="blue">{z.kelas}</Badge></td><td>{z.surat || z.juz}</td><td><StatusBadge status={z.hasil} /></td></tr>;
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Target */}
-          <div className="card mb-4">
-            <div className="card-header"><div className="card-title">🏆 Target Pencapaian</div></div>
-            <div className="card-body">
-              {pgTarget.length === 0 ? <div className="empty-state">Belum ada target tercatat oleh guru ini</div> : (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Tanggal</th><th>Siswa</th><th>Kelas</th><th>Mapel</th><th>Progress</th><th>Hasil</th></tr></thead>
-                    <tbody>
-                      {pgTarget.slice(0, 50).map(t => {
-                        const s = data.students.find(s => s.id === t.studentId);
-                        return <tr key={t.id}><td className="text-sm">{t.tanggal}</td><td style={{ fontWeight:600 }}>{s?.nama}</td><td><Badge variant="blue">{t.kelas}</Badge></td><td>{t.mataPelajaran}</td><td className="text-sm">{t.progressSaatIni}/{t.progressTotal} {t.satuan}</td><td><StatusBadge status={t.hasil} /></td></tr>;
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Rekap Nilai */}
-          <div className="card mb-4">
-            <div className="card-header"><div className="card-title">📊 Rekap Nilai Diinput</div></div>
-            <div className="card-body">
-              {pgNilai.length === 0 ? <div className="empty-state">Belum ada nilai tercatat oleh guru ini</div> : (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>Tanggal</th><th>Siswa</th><th>Kelas</th><th>Mapel</th><th>Jenis</th><th>Nilai</th></tr></thead>
-                    <tbody>
-                      {pgNilai.slice(0, 50).map(g => (
-                        <tr key={g.id}><td className="text-sm">{g.tanggal}</td><td style={{ fontWeight:600 }}>{g.student?.nama}</td><td><Badge variant="blue">{g.kelas}</Badge></td><td>{g.mataPelajaran}</td><td><Badge variant="gray">{g.jenisNilai}</Badge></td><td style={{ fontWeight:700 }}>{g.skor}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Laporan Harian */}
-          <div className="card mb-4">
-            <div className="card-header"><div className="card-title">📄 Laporan Harian Diinput</div></div>
-            <div className="card-body">
-              {pgHarian.length === 0 ? <div className="empty-state">Belum ada laporan harian tercatat oleh guru ini</div> : (
-                <div className="row-list">
-                  {pgHarian.slice(0, 50).map(r => {
-                    const s = data.students.find(s => s.id === r.studentId);
+                <div className="flex gap-4" style={{ justifyContent:"center", flexWrap:"wrap" }}>
+                  {STATUS_ABSENSI.map(st => {
+                    const count = pgAbsensi.filter(a => a.status === st).length;
                     return (
-                      <div key={r.id} className="row-item">
-                        <div><div style={{ fontWeight:600 }}>{r.bahasan}</div><div className="text-xs text-muted">{s?.nama} — {r.kelas} — {r.tanggal}</div></div>
-                        <StatusBadge status={r.hasil} />
+                      <div key={st} style={{ textAlign:"center", padding:"12px 20px", background:attBgPg[st], borderRadius:12 }}>
+                        <div style={{ fontSize:26, fontWeight:700, color:attColorsPg[st] }}>{count}</div>
+                        <div style={{ fontSize:12, color:attColorsPg[st] }}>{st}</div>
                       </div>
                     );
                   })}
@@ -3633,11 +3757,184 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
               )}
             </div>
           </div>
+
+          {!pgTeacherId ? (
+            /* ── Mode: Semua Guru → diagram perbandingan antar guru per kategori ── */
+            <>
+              <PGChartCard title="🗒️ Kehadiran Mengajar per Guru (%)" items={absensiPctPerGuru} color={PG_CHART_COLORS.absensi} />
+              <PGChartCard title="📝 Jurnal Mengajar per Guru"        items={jurnalPerGuruPg}    color={PG_CHART_COLORS.jurnal} />
+              <PGChartCard title="🎯 Laporan Kegiatan per Guru"       items={kegiatanPerGuruPg}  color={PG_CHART_COLORS.kegiatan} />
+              <PGChartCard title="📖 Ziyadah Hafalan per Guru"        items={ziyadahPerGuruPg}   color={PG_CHART_COLORS.ziyadah} />
+              <PGChartCard title="🏆 Target Pencapaian per Guru"      items={targetPerGuruPg}    color={PG_CHART_COLORS.target} />
+              <PGChartCard title="📊 Rekap Nilai per Guru"            items={nilaiPerGuruPg}     color={PG_CHART_COLORS.nilai} />
+              <PGChartCard title="📄 Laporan Harian per Guru"         items={harianPerGuruPg}    color={PG_CHART_COLORS.harian} />
+            </>
+          ) : (
+            /* ── Mode: Guru terpilih → diagram tren jumlah laporan per tanggal ── */
+            <PGChartCard title={`📈 Tren Aktivitas Laporan — ${selectedTeacher?.nama || ""}`} items={pgTrenPerTanggal} color={PG_CHART_COLORS.jurnal} type="line" />
+          )}
         </div>
 
         {pgTeacherId && (
           <div style={{ fontSize:11, color:"#92400e", background:"#fef3c7", borderRadius:8, padding:"10px 14px", marginTop:8 }}>
             ℹ️ Data Kegiatan, Ziyadah, Target, Nilai, dan Laporan Harian yang diinput sebelum fitur pencatatan guru ini aktif belum tercatat nama gurunya, sehingga tidak muncul di rekap per-guru. Data baru akan otomatis tercatat sesuai guru yang login.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Diagram Kepatuhan Guru per Tanggal (format halaman per bulan)
+  if (menu === "diagram-kepatuhan") {
+    const MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+    const dkKelas = formData.dk_kelas ?? "Semua";
+    const dkGuruId = formData.dk_guruId ?? "";
+    const dkBulan = formData.dk_bulan ?? String(new Date().getMonth());
+    const dkTahun = formData.dk_tahun ?? new Date().getFullYear();
+
+    const dkTeachers = data.teachers.filter(t =>
+      (dkKelas === "Semua" || t.kelas === dkKelas) &&
+      (!dkGuruId || t.id === dkGuruId)
+    );
+
+    // ── Set lookup O(1) — dibangun sekali per render, bukan per-sel tabel ──
+    const mkSet = (arr, keyFn) => { const s = new Set(); for (const it of arr) s.add(keyFn(it)); return s; };
+    const setAbsensiSiswa = mkSet(data.studentAttendance, a => a.kelas + "|" + a.tanggal);
+    const setAbsensiGuru  = mkSet(data.teacherAttendance, a => a.teacherId + "|" + a.tanggal);
+    const setJurnal       = mkSet(data.journals,          j => j.teacherId + "|" + j.tanggal);
+    const setHarian       = mkSet(data.dailyReports,      r => r.teacherId + "|" + r.tanggal);
+    const setNilai        = mkSet(data.grades,            g => g.teacherId + "|" + g.tanggal);
+    const setKegiatan     = mkSet(data.activities,        a => a.teacherId + "|" + a.tanggal);
+    const setTarget       = mkSet(data.targets,           x => x.teacherId + "|" + x.tanggal);
+    const setZiyadah      = mkSet(data.ziyadah,            z => z.teacherId + "|" + z.tanggal);
+
+    const DK_CATEGORIES = [
+      { key: "absensiSiswa",     label: "ABSENSI SISWA",    check: (t, tgl) => setAbsensiSiswa.has(t.kelas + "|" + tgl) },
+      { key: "absensiGuru",      label: "ABSENSI GURU",     check: (t, tgl) => setAbsensiGuru.has(t.id + "|" + tgl) },
+      { key: "jurnalGuru",       label: "JURNAL GURU",      check: (t, tgl) => setJurnal.has(t.id + "|" + tgl) },
+      { key: "laporanHarian",    label: "LAPORAN HARIAN",   check: (t, tgl) => setHarian.has(t.id + "|" + tgl) },
+      { key: "rekapNilai",       label: "REKAP NILAI",      check: (t, tgl) => setNilai.has(t.id + "|" + tgl) },
+      { key: "laporanKegiatan",  label: "LAPORAN KEGIATAN", check: (t, tgl) => setKegiatan.has(t.id + "|" + tgl) },
+      { key: "targetPencapaian", label: "TARGET PENCAPAI",  check: (t, tgl) => setTarget.has(t.id + "|" + tgl) },
+      { key: "ziyadah",          label: "ZIYADAH",          check: (t, tgl) => setZiyadah.has(t.id + "|" + tgl) },
+    ];
+
+    const pad2 = n => String(n).padStart(2, "0");
+    const daysInMonth = (y, mIdx) => new Date(y, mIdx + 1, 0).getDate();
+    const monthsToRender = dkBulan === "" ? MONTH_NAMES.map((_, i) => i) : [parseInt(dkBulan, 10)];
+
+    const thStyle = { border:"1.5px solid #111", padding:"5px 4px", fontSize:9, fontWeight:800, textAlign:"center", background:"#fff", color:"#111", lineHeight:1.15 };
+    const tdNameStyle = { border:"1.5px solid #111", padding:"4px 6px", fontSize:10, fontWeight:700, color:"#5b21b6", background:"#fff", whiteSpace:"nowrap" };
+    const tdCountStyle = { border:"1.5px solid #111", padding:"4px 6px", fontSize:10, fontWeight:800, color:"#111", background:"#fff", textAlign:"center" };
+    const tdCellStyle = filled => ({ border:"1.5px solid #111", padding:"4px 6px", background: filled ? "#16a34a" : "#dc2626" });
+
+    // Susun tabel per tanggal, dipasangkan 2 tanggal per baris/layar
+    const renderDateTable = (mIdx, day) => {
+      const tgl = `${dkTahun}-${pad2(mIdx + 1)}-${pad2(day)}`;
+      return (
+        <div key={tgl} className="card" style={{ flex:"1 1 0", minWidth:0 }}>
+          <div className="card-header" style={{ padding:"8px 12px" }}>
+            <div className="card-title" style={{ fontSize:13 }}>{MONTH_NAMES[mIdx].toUpperCase()} — TANGGAL {day}</div>
+          </div>
+          <div className="card-body" style={{ overflowX:"auto", padding:10 }}>
+            <table style={{ width:"100%", borderCollapse:"collapse" }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>NAMA</th>
+                  <th style={thStyle}>JUMLAH<br/>ISI FORM</th>
+                  {DK_CATEGORIES.map(c => <th key={c.key} style={thStyle}>{c.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {dkTeachers.map(t => {
+                  const flags = DK_CATEGORIES.map(c => c.check(t, tgl));
+                  const jumlahIsi = flags.filter(Boolean).length;
+                  return (
+                    <tr key={t.id}>
+                      <td style={tdNameStyle}>{t.nama}</td>
+                      <td style={tdCountStyle}>{jumlahIsi}</td>
+                      {DK_CATEGORIES.map((c, i) => (
+                        <td key={c.key} style={tdCellStyle(flags[i])}></td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div>
+        {/* Filter */}
+        <div className="card mb-4">
+          <div className="card-header" style={{ flexWrap:"wrap", gap:10 }}>
+            <div>
+              <div className="card-title">📅 Diagram Kepatuhan Guru per Tanggal</div>
+              <div className="card-sub">Hijau = sudah mengisi form, Merah = belum mengisi form. Kolom "Jumlah Isi Form" menunjukkan total kategori yang terisi. 2 tanggal ditampilkan berdampingan per layar/halaman.</div>
+            </div>
+            {dkBulan !== "" && (
+              <button id="btn-pdf-dk" onClick={() => downloadTablePDF("dk-capture", `Diagram Kepatuhan Guru — ${MONTH_NAMES[parseInt(dkBulan,10)]} ${dkTahun}`, `Kepatuhan-Guru-${MONTH_NAMES[parseInt(dkBulan,10)]}-${dkTahun}`)}
+                style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            )}
+          </div>
+          <div className="card-body">
+            <div className="grid grid-3" style={{ gap:12 }}>
+              <div className="form-group" style={{ margin:0 }}>
+                <label className="label">Kelas</label>
+                <div className="select-wrap"><select className="select" value={dkKelas} onChange={e => patchForm({ dk_kelas: e.target.value })}>
+                  {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
+                </select></div>
+              </div>
+              <div className="form-group" style={{ margin:0 }}>
+                <label className="label">Nama Guru</label>
+                <div className="select-wrap"><select className="select" value={dkGuruId} onChange={e => patchForm({ dk_guruId: e.target.value })}>
+                  <option value="">Semua Nama</option>
+                  {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
+                </select></div>
+              </div>
+              <div className="form-group" style={{ margin:0 }}>
+                <label className="label">Bulan</label>
+                <div className="select-wrap"><select className="select" value={dkBulan} onChange={e => patchForm({ dk_bulan: e.target.value })}>
+                  {MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}
+                  <option value="">Semua</option>
+                </select></div>
+              </div>
+            </div>
+            {dkBulan === "" && (
+              <div style={{ fontSize:12, color:"#92400e", background:"#fef3c7", borderRadius:8, padding:"8px 12px", marginTop:12 }}>
+                ℹ️ Menampilkan seluruh bulan dalam {dkTahun} — daftar bisa sangat panjang. Pilih satu bulan untuk tampilan lebih ringkas atau untuk export PDF.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {dkTeachers.length === 0 ? (
+          <div className="card"><div className="card-body"><div className="empty-state">Tidak ada guru yang cocok dengan filter ini</div></div></div>
+        ) : (
+          <div id="dk-capture">
+            {monthsToRender.map(mIdx => {
+              const nDays = daysInMonth(dkTahun, mIdx);
+              return (
+                <div key={mIdx}>
+                  {dkBulan === "" && (
+                    <div style={{ fontSize:16, fontWeight:800, color:"#111", margin:"20px 0 10px" }}>{MONTH_NAMES[mIdx]} {dkTahun}</div>
+                  )}
+                  {(() => {
+                    const days = Array.from({ length: nDays }, (_, i) => i + 1);
+                    const pairs = [];
+                    for (let i = 0; i < days.length; i += 2) pairs.push(days.slice(i, i + 2));
+                    return pairs.map(pair => (
+                      <div key={pair[0]} className="mb-4" style={{ display:"flex", gap:12, pageBreakAfter:"always" }}>
+                        {pair.map(day => renderDateTable(mIdx, day))}
+                      </div>
+                    ));
+                  })()}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -3655,7 +3952,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         const updated = { ...data.teachers.find(t => t.id === editId), nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus };
         setData(d => {
           const next = { ...d, teachers: d.teachers.map(t => t.id === editId ? updated : t) };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          persistDataAsync(next);
           return next;
         });
         writeDoc("teachers", updated);
@@ -3663,7 +3960,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         const rec = { id: genId(), nip: formData.newGuruNip, nama: formData.newGuruNama, email: formData.newGuruEmail, kelas: formData.newGuruKelas, status: formData.newGuruStatus || "Aktif" };
         setData(d => {
           const next = { ...d, teachers: [...d.teachers, rec] };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          persistDataAsync(next);
           return next;
         });
         writeDoc("teachers", rec);
@@ -3774,7 +4071,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         };
         setData(d => {
           const next = { ...d, quickLinks: d.quickLinks.map(l => l.id === editId ? updated : l) };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          persistDataAsync(next);
           return next;
         });
         writeDoc("quickLinks", updated);
@@ -3782,7 +4079,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         const rec = { id: genId(), title: formData.newLinkTitle, url: formData.newLinkUrl || "#", icon: formData.newLinkIcon || "🔗" };
         setData(d => {
           const next = { ...d, quickLinks: [...d.quickLinks, rec] };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          persistDataAsync(next);
           return next;
         });
         writeDoc("quickLinks", rec);
@@ -3798,7 +4095,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         const updated = { ...data.announcements.find(a => a.id === editId), judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi || "", icon: formData.newAnnIcon || "📢" };
         setData(d => {
           const next = { ...d, announcements: d.announcements.map(a => a.id === editId ? updated : a) };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          persistDataAsync(next);
           return next;
         });
         writeDoc("announcements", updated);
@@ -3806,7 +4103,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         const rec = { id: genId(), judul: formData.newAnnJudul, deskripsi: formData.newAnnDeskripsi || "", icon: formData.newAnnIcon || "📢" };
         setData(d => {
           const next = { ...d, announcements: [...d.announcements, rec] };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          persistDataAsync(next);
           return next;
         });
         writeDoc("announcements", rec);
@@ -4080,7 +4377,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         const updated = { ...data.subjects.find(s => s.id === editId), name: formData.newMapelNama };
         setData(d => {
           const next = { ...d, subjects: d.subjects.map(s => s.id === editId ? updated : s) };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          persistDataAsync(next);
           return next;
         });
         writeDoc("subjects", updated);
@@ -4088,7 +4385,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         const rec = { id: genId(), name: formData.newMapelNama };
         setData(d => {
           const next = { ...d, subjects: [...d.subjects, rec] };
-          try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+          persistDataAsync(next);
           return next;
         });
         writeDoc("subjects", rec);
@@ -4136,8 +4433,9 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
 
 // ─── PORTAL SISWA ─────────────────────────────────────────────────────────────
-function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user, canAccess, saveHarian, saveKegiatan, saveKegiatanKelas, saveTarget, saveZiyadah, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
+function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user, canAccess, saveHarian, saveKegiatan, saveKegiatanKelas, saveTarget, saveTargetKelas, saveZiyadah, saveZiyadahKelas, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
   const todayStr = today();
+  const currentMonthStr = String(new Date().getMonth() + 1).padStart(2, "0");
 
   if (menu === "dashboard") {
     return (
@@ -4465,117 +4763,108 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
   if (menu === "target") {
     return (
       <div>
-        {/* Form Input */}
-        <div className="card mb-4">
-          <div className="card-header"><div className="card-title">🎯 Target Pencapaian</div></div>
-          <div className="card-body">
-            <div className="grid grid-2" style={{ gap:16 }}>
-
-              {/* Kelas */}
-              <div className="form-group">
-                <label className="label">Kelas *</label>
-                <div className="select-wrap">
-                  <select className="select" value={formData.tr_kelas || ""} onChange={e => patchForm({ tr_kelas: e.target.value, tr_siswa: "" })}>
-                    <option value="">Pilih Kelas</option>
-                    {KELAS_LIST.filter(k => k !== "Semua").map(k => <option key={k} value={k}>{k}</option>)}
-                  </select>
+        {/* Per-Kelas Grid Input */}
+        <div className="grid grid-3">
+          {KELAS_LIST.filter(k => k !== "Semua").map(kelas => {
+            const students = data.students.filter(s => s.class_name === kelas);
+            const kelasTargets = data.targets.filter(t => t.kelas === kelas);
+            const isOpen = formData.expandedTrKelas === kelas;
+            return (
+              <div key={kelas} className="card" style={isOpen ? { gridColumn:"span 3" } : {}}>
+                <div className="card-header">
+                  <div className="flex gap-3 items-center">
+                    <div style={{ width:40, height:40, background:"#fee2e2", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>🎯</div>
+                    <div>
+                      <div className="card-title">{kelas}</div>
+                      <div className="card-sub">{students.length} siswa · {kelasTargets.length} target</div>
+                    </div>
+                  </div>
+                  <button className="btn btn-outline btn-sm" onClick={() => patchForm({ expandedTrKelas: isOpen ? null : kelas })}>
+                    {isOpen ? "Tutup" : "Input Target"}
+                  </button>
                 </div>
-              </div>
 
-              {/* Nama Siswa */}
-              <div className="form-group">
-                <label className="label">Nama Siswa *</label>
-                <div className="select-wrap">
-                  <select className="select" value={formData.tr_siswa || ""} onChange={e => patchForm({ tr_siswa: e.target.value })} disabled={!formData.tr_kelas}>
-                    <option value="">{formData.tr_kelas ? "Pilih Nama Siswa" : "Pilih kelas terlebih dahulu"}</option>
-                    {(formData.tr_kelas ? data.students.filter(s => s.class_name === formData.tr_kelas) : []).map(s => (
-                      <option key={s.id} value={s.id}>{s.nama}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                {isOpen && (
+                  <div className="card-body">
+                    <div className="grid grid-2" style={{ gap:10, marginBottom:12 }}>
+                      <div className="form-group">
+                        <label className="label">Mata Pelajaran *</label>
+                        <div className="select-wrap">
+                          <select className="select" value={formData[`tr_mapel_${kelas}`] || ""} onChange={e => patchForm({ [`tr_mapel_${kelas}`]: e.target.value })}>
+                            <option value="">-- Pilih --</option>
+                            {data.subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="form-group">
+                        <label className="label">Tanggal</label>
+                        <input className="input" type="date" value={formData[`tr_tanggal_${kelas}`] || todayStr} onChange={e => patchForm({ [`tr_tanggal_${kelas}`]: e.target.value })} />
+                      </div>
+                    </div>
 
-              {/* Mata Pelajaran */}
-              <div className="form-group">
-                <label className="label">Mata Pelajaran *</label>
-                <div className="select-wrap">
-                  <select className="select" value={formData.tr_mapel || ""} onChange={e => patchForm({ tr_mapel: e.target.value })}>
-                    <option value="">Pilih Mata Pelajaran</option>
-                    {data.subjects.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                  </select>
-                </div>
-              </div>
+                    <div className="table-wrap" style={{ maxHeight:420, overflowY:"auto" }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th style={{width:28}}>No</th>
+                            <th style={{width:70}}>NIS</th>
+                            <th>Nama</th>
+                            <th style={{width:120}}>Hasil</th>
+                            <th style={{width:150}}>Progress *</th>
+                            <th style={{width:130}}>Keterangan</th>
+                            <th style={{width:160}}>Catatan</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {students.length === 0
+                            ? <tr><td colSpan={7} className="empty-state">Tidak ada siswa</td></tr>
+                            : students.map((s, i) => (
+                              <tr key={s.id}>
+                                <td className="text-sm">{i+1}</td>
+                                <td className="text-sm">{s.nis}</td>
+                                <td className="text-sm" style={{fontWeight:600}}>{s.nama}</td>
+                                <td>
+                                  <div className="select-wrap" style={{minWidth:100}}>
+                                    <select className="select" style={{fontSize:12, padding:"5px 26px 5px 8px"}}
+                                      value={formData[`tr_hasil_${kelas}_${s.id}`] || "Lulus"}
+                                      onChange={e => patchForm({ [`tr_hasil_${kelas}_${s.id}`]: e.target.value })}>
+                                      {HASIL_LIST.map(h => <option key={h} value={h}>{h}</option>)}
+                                    </select>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                                    <input className="input" type="number" min="0" placeholder="0" style={{ width:55, padding:"5px 6px", fontSize:12 }}
+                                      value={formData[`tr_pv_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`tr_pv_${kelas}_${s.id}`]: e.target.value })} />
+                                    <span style={{ color:"#888", fontSize:12 }}>/</span>
+                                    <input className="input" type="number" min="1" placeholder="100" style={{ width:55, padding:"5px 6px", fontSize:12 }}
+                                      value={formData[`tr_pt_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`tr_pt_${kelas}_${s.id}`]: e.target.value })} />
+                                  </div>
+                                </td>
+                                <td>
+                                  <input className="input" placeholder="juz, ayat, hadits..." style={{ fontSize:12, padding:"5px 8px" }}
+                                    value={formData[`tr_ket_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`tr_ket_${kelas}_${s.id}`]: e.target.value })} />
+                                </td>
+                                <td>
+                                  <input className="input" placeholder="Catatan..." style={{ fontSize:12, padding:"5px 8px" }}
+                                    value={formData[`tr_cat_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`tr_cat_${kelas}_${s.id}`]: e.target.value })} />
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
 
-              {/* Hasil */}
-              <div className="form-group">
-                <label className="label">Hasil *</label>
-                <div className="select-wrap">
-                  <select className="select" value={formData.tr_hasil || ""} onChange={e => patchForm({ tr_hasil: e.target.value })}>
-                    <option value="">Pilih Hasil</option>
-                    {HASIL_LIST.map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                </div>
+                    <button className="btn btn-blue mt-3" onClick={() => saveTargetKelas(kelas)}><Icon.Save /> Simpan Semua</button>
+                  </div>
+                )}
               </div>
-
-              {/* Progress */}
-              <div className="form-group" style={{ gridColumn:"span 2" }}>
-                <label className="label">Progress *</label>
-                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    style={{ width:90 }}
-                    value={formData.tr_progress_val || ""}
-                    onChange={e => patchForm({ tr_progress_val: e.target.value })}
-                  />
-                  <span style={{ color:"#888", fontWeight:700, fontSize:18 }}>/</span>
-                  <input
-                    className="input"
-                    type="number"
-                    min="1"
-                    placeholder="100"
-                    style={{ width:90 }}
-                    value={formData.tr_progress_total || ""}
-                    onChange={e => patchForm({ tr_progress_total: e.target.value })}
-                  />
-                  <input
-                    className="input"
-                    placeholder="surat, ayat, hadits..."
-                    style={{ flex:1 }}
-                    value={formData.tr_satuan || ""}
-                    onChange={e => patchForm({ tr_satuan: e.target.value })}
-                  />
-                </div>
-                <div className="text-xs text-muted" style={{ marginTop:4 }}>Contoh: 3 / 10 juz, 15 / 40 ayat, 5 / 20 hadits</div>
-              </div>
-
-              {/* Catatan */}
-              <div className="form-group" style={{ gridColumn:"span 2" }}>
-                <label className="label">Catatan</label>
-                <textarea
-                  className="textarea"
-                  rows={3}
-                  placeholder="Catatan target pencapaian..."
-                  value={formData.tr_catatan || ""}
-                  onChange={e => patchForm({ tr_catatan: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <button
-              className="btn btn-blue"
-              onClick={saveTarget}
-              disabled={!formData.tr_kelas || !formData.tr_siswa || !formData.tr_mapel || !formData.tr_hasil}
-            >
-              <Icon.Save /> Simpan Target
-            </button>
-          </div>
+            );
+          })}
         </div>
 
         {/* Riwayat */}
-        <div className="card">
+        <div className="card mb-4">
           <div className="card-header">
             <div className="card-title">🎯 Riwayat Target Pencapaian</div>
             <button id="btn-pdf-tbl-target" onClick={() => downloadTablePDF("tbl-target","Riwayat Target Pencapaian","Target-Pencapaian")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
@@ -4592,11 +4881,11 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                 </select>
               </div>
               <div className="select-wrap" style={{width:150}}>
-                <select className="select" style={{fontSize:13}} value={formData.tr_fbulan || ""} onChange={e => patchForm({tr_fbulan: e.target.value})}>
-                  <option value="">Semua Bulan</option>
+                <select className="select" style={{fontSize:13}} value={formData.tr_fbulan !== undefined ? formData.tr_fbulan : currentMonthStr} onChange={e => patchForm({tr_fbulan: e.target.value})}>
                   {["01","02","03","04","05","06","07","08","09","10","11","12"].map(bln => (
                     <option key={bln} value={bln}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(bln)-1]}</option>
                   ))}
+                  <option value="">Semua Bulan</option>
                 </select>
               </div>
             </div>
@@ -4610,11 +4899,12 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                 <tbody>
                   {(() => {
                     const fk = formData.filterTargetKelas || "Semua";
+                    const trBulanAktif = formData.tr_fbulan !== undefined ? formData.tr_fbulan : currentMonthStr;
                     const filtered = data.targets.filter(t =>
                       (fk === "Semua" || t.kelas === fk)
                       && (!formData.tr_fnama || t.studentId === formData.tr_fnama)
-                      && (!formData.tr_fbulan || (t.tanggal && t.tanggal.slice(5,7) === formData.tr_fbulan))
-                    );
+                      && (!trBulanAktif || (t.tanggal && t.tanggal.slice(5,7) === trBulanAktif))
+                    ).slice().sort((a, b) => String(b.id).localeCompare(String(a.id)));
                     if (filtered.length === 0) return <tr><td colSpan={8} className="empty-state">Belum ada data target</td></tr>;
                     return filtered.map(t => {
                       const s = data.students.find(s => s.id === t.studentId);
@@ -4651,27 +4941,128 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
 
     if (menu === "ziyadah") {
     return (
-      <div className="card">
-        <div className="card-header"><div className="card-title">📖 Input Ziyadah Hafalan</div></div>
-        <div className="card-body">
-          <div className="grid grid-2 mb-4">
-            <div className="form-group"><label className="label">Kelas *</label><div className="select-wrap"><select className="select" value={formData.z_kelas || ""} onChange={e => patchForm({ z_kelas: e.target.value, z_siswa: "" })}><option value="">-- Pilih --</option>{KELAS_LIST.filter(k => k !== "Semua").map(k => <option key={k} value={k}>{k}</option>)}</select></div></div>
-            <div className="form-group"><label className="label">Siswa *</label><div className="select-wrap"><select className="select" value={formData.z_siswa || ""} onChange={e => patchForm({ z_siswa: e.target.value })} disabled={!formData.z_kelas}><option value="">{formData.z_kelas ? "-- Pilih --" : "Pilih kelas dulu"}</option>{data.students.filter(s => s.class_name === formData.z_kelas).map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}</select></div></div>
-            <div className="form-group"><label className="label">Tanggal *</label><input className="input" type="date" value={formData.z_tanggal || todayStr} onChange={e => patchForm({ z_tanggal: e.target.value })} /></div>
-            <div className="form-group"><label className="label">Juz *</label><div className="select-wrap"><select className="select" value={formData.z_juz || ""} onChange={e => patchForm({ z_juz: e.target.value, z_surat: "" })}><option value="">-- Pilih --</option>{JUZ_LIST.filter(j => j !== "Semua").map(j => <option key={j} value={j}>{j}</option>)}</select></div></div>
-            <div className="form-group"><label className="label">Surat</label><div className="select-wrap"><select className="select" value={formData.z_surat || ""} onChange={e => patchForm({ z_surat: e.target.value })} disabled={!formData.z_juz}><option value="">-- Pilih Surat --</option>{data.surahs.filter(s => s.juz === formData.z_juz).map(s => <option key={s.id} value={s.nama}>{s.nama} ({s.ayat} ayat)</option>)}</select></div></div>
-            <div className="form-group"><label className="label">Hasil *</label><div className="select-wrap"><select className="select" value={formData.z_hasil || ""} onChange={e => patchForm({ z_hasil: e.target.value })}><option value="">-- Pilih --</option>{HASIL_HAFALAN.map(h => <option key={h} value={h}>{h}</option>)}</select></div></div>
-            <div className="form-group" style={{ gridColumn: "span 2" }}><label className="label">Progress (misal: Ayat 1-10)</label><input className="input" value={formData.z_progress || ""} onChange={e => patchForm({ z_progress: e.target.value })} /></div>
-          </div>
-          <div className="form-group"><label className="label">Catatan</label><textarea className="textarea" value={formData.z_catatan || ""} onChange={e => patchForm({ z_catatan: e.target.value })} /></div>
-          <button className="btn btn-blue" onClick={saveZiyadah} disabled={!formData.z_siswa || !formData.z_juz || !formData.z_hasil}><Icon.Save /> Simpan Ziyadah</button>
+      <div>
+        {/* Per-Kelas Grid Input */}
+        <div className="grid grid-3">
+          {KELAS_LIST.filter(k => k !== "Semua").map(kelas => {
+            const students = data.students.filter(s => s.class_name === kelas);
+            const kelasZiyadah = data.ziyadah.filter(z => z.kelas === kelas);
+            const isOpen = formData.expandedZyKelas === kelas;
+            return (
+              <div key={kelas} className="card" style={isOpen ? { gridColumn:"span 3" } : {}}>
+                <div className="card-header">
+                  <div className="flex gap-3 items-center">
+                    <div style={{ width:40, height:40, background:"#ecfdf5", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>📖</div>
+                    <div>
+                      <div className="card-title">{kelas}</div>
+                      <div className="card-sub">{students.length} siswa · {kelasZiyadah.length} ziyadah</div>
+                    </div>
+                  </div>
+                  <button className="btn btn-outline btn-sm" onClick={() => patchForm({ expandedZyKelas: isOpen ? null : kelas })}>
+                    {isOpen ? "Tutup" : "Input Ziyadah"}
+                  </button>
+                </div>
 
-          <div className="mt-6">
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-              <div style={{ fontWeight:700 }}>📖 Riwayat Ziyadah</div>
-              <button id="btn-pdf-tbl-ziyadah" onClick={() => downloadTablePDF("tbl-ziyadah","Riwayat Ziyadah","Ziyadah")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
-            </div>
-            <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap",gap:8}}>
+                {isOpen && (
+                  <div className="card-body">
+                    <div className="form-group" style={{ maxWidth:240, marginBottom:12 }}>
+                      <label className="label">Tanggal</label>
+                      <input className="input" type="date" value={formData[`z_tanggal_${kelas}`] || todayStr} onChange={e => patchForm({ [`z_tanggal_${kelas}`]: e.target.value })} />
+                    </div>
+
+                    <div className="table-wrap" style={{ maxHeight:440, overflowY:"auto" }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th style={{width:28}}>No</th>
+                            <th style={{width:70}}>NIS</th>
+                            <th>Nama</th>
+                            <th style={{width:120}}>Juz</th>
+                            <th style={{width:150}}>Surat</th>
+                            <th style={{width:110}}>Hasil</th>
+                            <th style={{width:150}}>Progress *</th>
+                            <th style={{width:130}}>Keterangan</th>
+                            <th style={{width:160}}>Catatan</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {students.length === 0
+                            ? <tr><td colSpan={9} className="empty-state">Tidak ada siswa</td></tr>
+                            : students.map((s, i) => {
+                              const zJuz = formData[`z_juz_${kelas}_${s.id}`] || "";
+                              return (
+                              <tr key={s.id}>
+                                <td className="text-sm">{i+1}</td>
+                                <td className="text-sm">{s.nis}</td>
+                                <td className="text-sm" style={{fontWeight:600}}>{s.nama}</td>
+                                <td>
+                                  <div className="select-wrap" style={{minWidth:110}}>
+                                    <select className="select" style={{fontSize:12, padding:"5px 26px 5px 8px"}}
+                                      value={zJuz}
+                                      onChange={e => patchForm({ [`z_juz_${kelas}_${s.id}`]: e.target.value, [`z_surat_${kelas}_${s.id}`]: "" })}>
+                                      <option value="">-- Pilih --</option>
+                                      {JUZ_LIST.filter(j => j !== "Semua").map(j => <option key={j} value={j}>{j}</option>)}
+                                    </select>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="select-wrap" style={{minWidth:130}}>
+                                    <select className="select" style={{fontSize:12, padding:"5px 26px 5px 8px"}}
+                                      value={formData[`z_surat_${kelas}_${s.id}`] || ""}
+                                      onChange={e => patchForm({ [`z_surat_${kelas}_${s.id}`]: e.target.value })}
+                                      disabled={!zJuz}>
+                                      <option value="">-- Pilih --</option>
+                                      {data.surahs.filter(sr => sr.juz === zJuz).map(sr => <option key={sr.id} value={sr.nama}>{sr.nama}</option>)}
+                                    </select>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="select-wrap" style={{minWidth:100}}>
+                                    <select className="select" style={{fontSize:12, padding:"5px 26px 5px 8px"}}
+                                      value={formData[`z_hasil_${kelas}_${s.id}`] || "Lulus"}
+                                      onChange={e => patchForm({ [`z_hasil_${kelas}_${s.id}`]: e.target.value })}>
+                                      {HASIL_LIST.map(h => <option key={h} value={h}>{h}</option>)}
+                                    </select>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                                    <input className="input" type="number" min="0" placeholder="0" style={{ width:55, padding:"5px 6px", fontSize:12 }}
+                                      value={formData[`z_pv_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`z_pv_${kelas}_${s.id}`]: e.target.value })} />
+                                    <span style={{ color:"#888", fontSize:12 }}>/</span>
+                                    <input className="input" type="number" min="1" placeholder="100" style={{ width:55, padding:"5px 6px", fontSize:12 }}
+                                      value={formData[`z_pt_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`z_pt_${kelas}_${s.id}`]: e.target.value })} />
+                                  </div>
+                                </td>
+                                <td>
+                                  <input className="input" placeholder="mis: Ayat 1-10" style={{ fontSize:12, padding:"5px 8px" }}
+                                    value={formData[`z_ket_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`z_ket_${kelas}_${s.id}`]: e.target.value })} />
+                                </td>
+                                <td>
+                                  <input className="input" placeholder="Catatan..." style={{ fontSize:12, padding:"5px 8px" }}
+                                    value={formData[`z_cat_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`z_cat_${kelas}_${s.id}`]: e.target.value })} />
+                                </td>
+                              </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <button className="btn btn-blue mt-3" onClick={() => saveZiyadahKelas(kelas)}><Icon.Save /> Simpan Semua</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Riwayat */}
+        <div className="card mb-4">
+          <div className="card-header">
+            <div className="card-title">📖 Riwayat Ziyadah</div>
+            <button id="btn-pdf-tbl-ziyadah" onClick={() => downloadTablePDF("tbl-ziyadah","Riwayat Ziyadah","Ziyadah")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            <div className="flex gap-2 items-center" style={{flexWrap:"wrap",gap:8}}>
               <div className="select-wrap" style={{width:140}}>
                 <select className="select" style={{fontSize:13}} value={formData.zy_fkelas || "Semua"} onChange={e => patchForm({zy_fkelas: e.target.value, zy_fnama: ""})}>
                   {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
@@ -4684,22 +5075,24 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                 </select>
               </div>
               <div className="select-wrap" style={{width:150}}>
-                <select className="select" style={{fontSize:13}} value={formData.zy_fbulan || ""} onChange={e => patchForm({zy_fbulan: e.target.value})}>
-                  <option value="">Semua Bulan</option>
+                <select className="select" style={{fontSize:13}} value={formData.zy_fbulan !== undefined ? formData.zy_fbulan : currentMonthStr} onChange={e => patchForm({zy_fbulan: e.target.value})}>
                   {["01","02","03","04","05","06","07","08","09","10","11","12"].map(bln => (
                     <option key={bln} value={bln}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(bln)-1]}</option>
                   ))}
+                  <option value="">Semua Bulan</option>
                 </select>
               </div>
             </div>
+          </div>
+          <div className="card-body">
             <div id="tbl-ziyadah" className="row-list">
               {(() => {
+                const zyBulanAktif = formData.zy_fbulan !== undefined ? formData.zy_fbulan : currentMonthStr;
                 const fzy = data.ziyadah.filter(z => {
-                  const s = data.students.find(s => s.id === z.studentId);
                   return (!formData.zy_fkelas || formData.zy_fkelas === "Semua" || z.kelas === formData.zy_fkelas)
                     && (!formData.zy_fnama || z.studentId === formData.zy_fnama)
-                    && (!formData.zy_fbulan || (z.tanggal && z.tanggal.slice(5,7) === formData.zy_fbulan));
-                });
+                    && (!zyBulanAktif || (z.tanggal && z.tanggal.slice(5,7) === zyBulanAktif));
+                }).slice().sort((a, b) => String(b.id).localeCompare(String(a.id)));
                 if (fzy.length === 0) return <div className="empty-state">Belum ada data ziyadah</div>;
                 return fzy.map(z => {
                   const s = data.students.find(s => s.id === z.studentId);
@@ -4708,6 +5101,8 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                       <div>
                         <div style={{ fontWeight:600 }}>{z.surat || z.juz}</div>
                         <div className="text-xs text-muted">{s?.nama} — {z.juz} — {z.tanggal}</div>
+                        {z.progress && <div className="text-xs text-muted">{z.progress}</div>}
+                        {z.keterangan && <div className="text-xs text-muted">{z.keterangan}</div>}
                       </div>
                       <div className="flex gap-2 items-center">
                         <StatusBadge status={z.hasil} />
@@ -4743,7 +5138,7 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
           .then(() => {
             setData(d => {
               const next = { ...d, students: d.students.map(s => s.id === editId ? updated : s) };
-              try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+              persistDataAsync(next);
               return next;
             });
             patchForm({ showSiswaDialog: false, savingSiswa: false });
@@ -4758,7 +5153,7 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
           .then(() => {
             setData(d => {
               const next = { ...d, students: [...d.students, rec] };
-              try { localStorage.setItem("bunayya_data", JSON.stringify(next)); } catch(e) {}
+              persistDataAsync(next);
               return next;
             });
             patchForm({ showSiswaDialog: false, savingSiswa: false });
@@ -4834,18 +5229,80 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
 }
 
 // ─── PORTAL WALI ─────────────────────────────────────────────────────────────
+// ─── Filter Bulan/Hari Ini/Semua untuk Portal Wali ─────────────────────────
+function WaliBulanFilter({ mode, bulan, onModeChange, onBulanChange }) {
+  return (
+    <div className="flex gap-2 items-center" style={{ flexWrap: "wrap", gap: 8 }}>
+      <div className="select-wrap" style={{ width: 150 }}>
+        <select className="select" style={{ fontSize: 13 }}
+          value={bulan}
+          onChange={e => { onBulanChange(e.target.value); onModeChange("bulan"); }}>
+          {MONTH_OPTIONS_ID.map(bln => (
+            <option key={bln} value={bln}>{MONTH_NAMES_ID[parseInt(bln, 10) - 1]}</option>
+          ))}
+        </select>
+      </div>
+      <button onClick={() => onModeChange("hari")}
+        style={{ padding: "5px 10px", fontSize: 12, fontWeight: 700, background: mode === "hari" ? "#6b3fa0" : "#ede9fe", color: mode === "hari" ? "white" : "#6b3fa0", border: "none", borderRadius: 8, cursor: "pointer" }}>Hari Ini</button>
+      <button onClick={() => onModeChange("semua")}
+        style={{ padding: "5px 10px", fontSize: 12, fontWeight: 700, background: mode === "semua" ? "#475569" : "#f1f5f9", color: mode === "semua" ? "white" : "#475569", border: "none", borderRadius: 8, cursor: "pointer" }}>Semua</button>
+    </div>
+  );
+}
+
+// ─── Tombol Download JPG (capture elemen ke gambar) ────────────────────────
+function DownloadJpgButton({ elementId, filename, label = "Download JPG" }) {
+  const [downloading, setDownloading] = React.useState(false);
+  const handleDownload = () => {
+    const el = document.getElementById(elementId);
+    if (!el) { alert("Konten belum siap, coba lagi."); return; }
+    if (typeof html2canvas === "undefined") { alert("Library belum siap, tunggu sebentar lalu coba lagi."); return; }
+    setDownloading(true);
+    html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: "#ffffff",
+      logging: false,
+      onclone: (doc) => {
+        const cloneEl = doc.getElementById(elementId);
+        if (cloneEl) cloneEl.style.display = "block";
+      }
+    }).then(canvas => {
+      const link = document.createElement("a");
+      link.download = filename;
+      link.href = canvas.toDataURL("image/jpeg", 0.95);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setDownloading(false);
+    }).catch(err => {
+      console.error("Download error:", err);
+      alert("Gagal download: " + err.message);
+      setDownloading(false);
+    });
+  };
+  return (
+    <button onClick={handleDownload} disabled={downloading}
+      style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", fontSize: 13, fontWeight: 700, background: downloading ? "#aaa" : "#1d7a5f", color: "white", border: "none", borderRadius: 10, cursor: downloading ? "not-allowed" : "pointer", transition: "all .2s" }}>
+      {downloading ? <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⟳</span> Memproses...</> : <>⬇️ {label}</>}
+    </button>
+  );
+}
+
 function PortalWali({ menu, data, formData, patchForm, user }) {
   const todayStr = today();
+  const currentMonthStr = currentMonth();
   const studentData = user?.role === "student"
     ? data.students.find(s => s.nis === user.nis)
     : data.students.find(s => s.id === formData.wali_siswa);
 
   const sid = studentData?.id || formData.wali_siswa;
 
-  // ── Filter rentang tanggal untuk Dashboard ──────────────────────────────
-  const dashDari   = formData.wali_dash_dari   ?? "";
-  const dashSampai = formData.wali_dash_sampai ?? "";
-  const inDashRange = tgl => (!dashDari || tgl >= dashDari) && (!dashSampai || tgl <= dashSampai);
+  // ── Filter Bulan/Hari Ini/Semua untuk Dashboard (otomatis bulan berjalan) ──
+  const dashMode  = formData.wali_dash_mode  ?? "bulan";
+  const dashBulan = formData.wali_dash_bulan ?? currentMonthStr;
+  const inDashRange = tgl => filterByDateMode(tgl, dashMode, dashBulan, todayStr);
 
   const studentAttAll = data.studentAttendance.filter(a => a.studentId === sid);
   const studentGradesAll = data.grades.filter(g => g.studentId === sid);
@@ -4906,23 +5363,15 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
           <div className="card mb-4">
             <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
               <div>
-                <div className="card-title">📅 Rentang Tanggal</div>
+                <div className="card-title">📅 Bulan</div>
                 <div className="card-sub">Filter data yang ditampilkan pada dashboard</div>
               </div>
-              <div className="flex gap-2 items-center" style={{ flexWrap: "wrap", gap: 8 }}>
-                <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Dari</span>
-                <input type="date" className="input" style={{ width: 140, fontSize: 13, padding: "5px 8px" }}
-                  value={formData.wali_dash_dari ?? ""}
-                  onChange={e => patchForm({ wali_dash_dari: e.target.value })} />
-                <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Sampai</span>
-                <input type="date" className="input" style={{ width: 140, fontSize: 13, padding: "5px 8px" }}
-                  value={formData.wali_dash_sampai ?? ""}
-                  onChange={e => patchForm({ wali_dash_sampai: e.target.value })} />
-                <button onClick={() => patchForm({ wali_dash_dari: todayStr, wali_dash_sampai: todayStr })}
-                  style={{ padding: "5px 10px", fontSize: 12, fontWeight: 700, background: "#ede9fe", color: "#6b3fa0", border: "none", borderRadius: 8, cursor: "pointer" }}>Hari Ini</button>
-                <button onClick={() => patchForm({ wali_dash_dari: "", wali_dash_sampai: "" })}
-                  style={{ padding: "5px 10px", fontSize: 12, fontWeight: 700, background: "#f1f5f9", color: "#475569", border: "none", borderRadius: 8, cursor: "pointer" }}>Semua</button>
-              </div>
+              <WaliBulanFilter
+                mode={dashMode}
+                bulan={dashBulan}
+                onModeChange={m => patchForm({ wali_dash_mode: m })}
+                onBulanChange={b => patchForm({ wali_dash_bulan: b })}
+              />
             </div>
           </div>
 
@@ -5093,18 +5542,38 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
         </div>
       )}
 
-      {menu === "notifikasi" && (
+      {menu === "notifikasi" && (() => {
+        const notifMode  = formData.wali_notif_mode  ?? "bulan";
+        const notifBulan = formData.wali_notif_bulan ?? currentMonthStr;
+        const inNotifRange = tgl => filterByDateMode(tgl, notifMode, notifBulan, todayStr);
+        const filteredAnnouncements = data.announcements.filter(a => !a.tanggal || inNotifRange(a.tanggal));
+        return (
         <div>
+          <div className="card mb-4">
+            <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+              <div className="card-title">📅 Bulan</div>
+              <WaliBulanFilter
+                mode={notifMode}
+                bulan={notifBulan}
+                onModeChange={m => patchForm({ wali_notif_mode: m })}
+                onBulanChange={b => patchForm({ wali_notif_bulan: b })}
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <DownloadJpgButton elementId="wali-capture-notifikasi" filename={`rekap-notifikasi-${(studentData?.nama || "siswa").replace(/ /g, "-")}-${todayStr}.jpg`} />
+          </div>
+          <div id="wali-capture-notifikasi" style={{ padding: 8, background: "#f8fafc", borderRadius: 12 }}>
           {/* Pengumuman Sekolah */}
           <div className="card mb-4">
             <div className="card-header">
               <div className="card-title">📢 Pengumuman Sekolah</div>
             </div>
             <div className="card-body">
-              {data.announcements.length === 0
+              {filteredAnnouncements.length === 0
                 ? <div className="empty-state">Belum ada pengumuman</div>
-                : data.announcements.map((a, i) => (
-                  <div key={a.id || i} style={{ display:"flex", gap:14, alignItems:"flex-start", padding:"14px 0", borderBottom: i < data.announcements.length-1 ? "1px solid #f0f0f0" : "none" }}>
+                : filteredAnnouncements.map((a, i) => (
+                  <div key={a.id || i} style={{ display:"flex", gap:14, alignItems:"flex-start", padding:"14px 0", borderBottom: i < filteredAnnouncements.length-1 ? "1px solid #f0f0f0" : "none" }}>
                     <div style={{ width:44, height:44, borderRadius:12, background:"#eff6ff", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>{a.icon || "📢"}</div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>{a.judul}</div>
@@ -5132,7 +5601,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
                     ...studentActsAll.map(a => ({ tanggal: a.tanggal, icon: "🎯", teks: `Kegiatan: ${a.kategori || a.mataPelajaran || ""}`, bg:"#eff6ff", warna:"#1e40af" })),
                     ...studentTargetsAll.map(t => ({ tanggal: t.tanggal, icon: "🏆", teks: `Target: ${t.namaTarget || t.catatan || ""}`, bg:"#fee2e2", warna:"#991b1b" })),
                     ...studentZiyadahAll.map(z => ({ tanggal: z.tanggal, icon: "📖", teks: `Hafalan: ${z.surah || ""} ${z.ayat ? "ayat "+z.ayat : ""}`, bg:"#d1fae5", warna:"#065f46" })),
-                  ].sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || "")).slice(0, 20);
+                  ].filter(item => inNotifRange(item.tanggal)).sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || "")).slice(0, 20);
 
                   if (items.length === 0) return <div className="empty-state">Belum ada aktivitas tercatat</div>;
                   return items.map((item, i) => (
@@ -5148,144 +5617,272 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
               </div>
             </div>
           )}
+          </div>{/* end wali-capture-notifikasi */}
         </div>
-      )}
+        );
+      })()}
 
-      {menu === "absensi" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">📋 Laporan Absensi Siswa</div></div>
-          <div className="card-body">
-            <div className="flex gap-4 mb-4" style={{ justifyContent: "center" }}>
-              {STATUS_ABSENSI.map(st => {
-                const count = studentAttAll.filter(a => a.status === st).length;
-                return (
-                  <div key={st} style={{ textAlign: "center", padding: "12px 20px", background: attBg[st], borderRadius: 12 }}>
-                    <div style={{ fontSize: 28, fontWeight: 700, color: attColors[st] }}>{count}</div>
-                    <div style={{ fontSize: 12, color: attColors[st] }}>{st}</div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Tanggal</th><th>Status</th></tr></thead>
-                <tbody>
-                  {studentAttAll.length === 0 ? <tr><td colSpan={2} className="empty-state">Tidak ada data</td></tr> : studentAttAll.map(a => <tr key={a.id}><td>{a.tanggal}</td><td><StatusBadge status={a.status} /></td></tr>)}
-                </tbody>
-              </table>
+      {menu === "absensi" && (() => {
+        const absMode  = formData.wali_absensi_mode  ?? "bulan";
+        const absBulan = formData.wali_absensi_bulan ?? currentMonthStr;
+        const fAbs = studentAttAll.filter(a => filterByDateMode(a.tanggal, absMode, absBulan, todayStr));
+        return (
+        <div>
+          <div className="card mb-4">
+            <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+              <div className="card-title">📅 Bulan</div>
+              <WaliBulanFilter
+                mode={absMode}
+                bulan={absBulan}
+                onModeChange={m => patchForm({ wali_absensi_mode: m })}
+                onBulanChange={b => patchForm({ wali_absensi_bulan: b })}
+              />
             </div>
           </div>
-        </div>
-      )}
-
-      {menu === "harian" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">📝 Laporan Harian</div></div>
-          <div className="card-body">
-            {studentReportsAll.length === 0 ? <div className="empty-state">Tidak ada laporan harian</div> : (
-              <div className="row-list">
-                {studentReportsAll.map(r => (
-                  <div key={r.id} className="row-item">
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{r.bahasan}</div>
-                      <div className="text-sm text-muted">{r.tanggal}{r.halaman ? ` — Hal. ${r.halaman}` : ""}</div>
-                      {r.catatan && <div className="text-xs text-muted">{r.catatan}</div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <DownloadJpgButton elementId="wali-capture-absensi" filename={`rekap-absensi-${(studentData?.nama || "siswa").replace(/ /g, "-")}-${todayStr}.jpg`} />
+          </div>
+          <div id="wali-capture-absensi" className="card" style={{ padding: 0 }}>
+            <div className="card-header"><div className="card-title">📋 Laporan Absensi Siswa</div></div>
+            <div className="card-body">
+              <div className="flex gap-4 mb-4" style={{ justifyContent: "center" }}>
+                {STATUS_ABSENSI.map(st => {
+                  const count = fAbs.filter(a => a.status === st).length;
+                  return (
+                    <div key={st} style={{ textAlign: "center", padding: "12px 20px", background: attBg[st], borderRadius: 12 }}>
+                      <div style={{ fontSize: 28, fontWeight: 700, color: attColors[st] }}>{count}</div>
+                      <div style={{ fontSize: 12, color: attColors[st] }}>{st}</div>
                     </div>
-                    <StatusBadge status={r.hasil} />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {menu === "nilai" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">📊 Nilai</div></div>
-          <div className="card-body">
-            {studentGradesAll.length > 0 && (
-              <div className="grid grid-4 mb-4" style={{ gap: 12 }}>
-                {studentGradesAll.slice(0, 8).map(g => (
-                  <div key={g.id} style={{ background: "#f8fafc", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                    <div className="text-xs text-muted">{g.mataPelajaran}</div>
-                    <div style={{ fontSize: 28, fontWeight: 700 }}>{g.skor}</div>
-                  </div>
-                ))}
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Tanggal</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {fAbs.length === 0 ? <tr><td colSpan={2} className="empty-state">Tidak ada data</td></tr> : fAbs.map(a => <tr key={a.id}><td>{a.tanggal}</td><td><StatusBadge status={a.status} /></td></tr>)}
+                  </tbody>
+                </table>
               </div>
-            )}
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Tanggal</th><th>Mapel</th><th>Jenis</th><th>Nilai</th></tr></thead>
-                <tbody>
-                  {studentGradesAll.length === 0 ? <tr><td colSpan={4} className="empty-state">Tidak ada data nilai</td></tr> : studentGradesAll.map(g => <tr key={g.id}><td className="text-sm">{g.tanggal}</td><td>{g.mataPelajaran}</td><td><Badge variant="gray">{g.jenisNilai}</Badge></td><td style={{ fontWeight: 700 }}>{g.skor}</td></tr>)}
-                </tbody>
-              </table>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
-      {menu === "kegiatan" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">🎯 Laporan Kegiatan</div></div>
-          <div className="card-body">
-            {studentActsAll.length === 0 ? <div className="empty-state">Tidak ada kegiatan</div> : (
-              <div className="row-list">
-                {studentActsAll.map(a => (
-                  <div key={a.id} className="row-item">
-                    <div><div style={{ fontWeight: 600 }}>{a.kategori}</div><div className="text-sm text-muted">{a.tanggal}</div>{a.deskripsi && <div className="text-xs text-muted">{a.deskripsi}</div>}</div>
-                    <StatusBadge status={a.penilaian} />
-                  </div>
-                ))}
-              </div>
-            )}
+      {menu === "harian" && (() => {
+        const harianMode  = formData.wali_harian_mode  ?? "bulan";
+        const harianBulan = formData.wali_harian_bulan ?? currentMonthStr;
+        const fHarian = studentReportsAll.filter(r => filterByDateMode(r.tanggal, harianMode, harianBulan, todayStr));
+        return (
+        <div>
+          <div className="card mb-4">
+            <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+              <div className="card-title">📅 Bulan</div>
+              <WaliBulanFilter
+                mode={harianMode}
+                bulan={harianBulan}
+                onModeChange={m => patchForm({ wali_harian_mode: m })}
+                onBulanChange={b => patchForm({ wali_harian_bulan: b })}
+              />
+            </div>
           </div>
-        </div>
-      )}
-
-      {menu === "target" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">🏆 Target Pencapaian</div></div>
-          <div className="card-body">
-            {studentTargetsAll.length === 0 ? <div className="empty-state">Tidak ada target</div> : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {studentTargetsAll.map(t => (
-                  <div key={t.id} style={{ background: "#f8fafc", borderRadius: 12, padding: 16 }}>
-                    <div className="flex justify-between items-center mb-2">
-                      <div style={{ fontWeight: 700 }}>{t.mataPelajaran}</div>
-                      <Badge variant="outline">{t.progressSaatIni}/{t.progressTotal} {t.satuan}</Badge>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <DownloadJpgButton elementId="wali-capture-harian" filename={`rekap-harian-${(studentData?.nama || "siswa").replace(/ /g, "-")}-${todayStr}.jpg`} />
+          </div>
+          <div id="wali-capture-harian" className="card" style={{ padding: 0 }}>
+            <div className="card-header"><div className="card-title">📝 Laporan Harian</div></div>
+            <div className="card-body">
+              {fHarian.length === 0 ? <div className="empty-state">Tidak ada laporan harian</div> : (
+                <div className="row-list">
+                  {fHarian.map(r => (
+                    <div key={r.id} className="row-item">
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{r.bahasan}</div>
+                        <div className="text-sm text-muted">{r.tanggal}{r.halaman ? ` — Hal. ${r.halaman}` : ""}</div>
+                        {r.catatan && <div className="text-xs text-muted">{r.catatan}</div>}
+                      </div>
+                      <StatusBadge status={r.hasil} />
                     </div>
-                    <ProgressBar value={(t.progressSaatIni / t.progressTotal) * 100} />
-                    <div className="flex justify-between mt-2">
-                      <StatusBadge status={t.hasil} />
-                      <span className="text-xs text-muted">{t.tanggal}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
-      {menu === "hafalan" && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">📖 Surat yang Dihafal</div></div>
-          <div className="card-body">
-            {studentZiyadahAll.length === 0 ? <div className="empty-state">Tidak ada hafalan</div> : (
-              <div className="row-list">
-                {studentZiyadahAll.map(z => (
-                  <div key={z.id} className="row-item">
-                    <div><div style={{ fontWeight: 600 }}>{z.surat}</div><div className="text-sm text-muted">{z.juz} — {z.tanggal}</div>{z.progress && <div className="text-xs text-muted">{z.progress}</div>}</div>
-                    <StatusBadge status={z.hasil} />
-                  </div>
-                ))}
+      {menu === "nilai" && (() => {
+        const nilaiMode  = formData.wali_nilai_mode  ?? "bulan";
+        const nilaiBulan = formData.wali_nilai_bulan ?? currentMonthStr;
+        const fNilai = studentGradesAll.filter(g => filterByDateMode(g.tanggal, nilaiMode, nilaiBulan, todayStr));
+        return (
+        <div>
+          <div className="card mb-4">
+            <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+              <div className="card-title">📅 Bulan</div>
+              <WaliBulanFilter
+                mode={nilaiMode}
+                bulan={nilaiBulan}
+                onModeChange={m => patchForm({ wali_nilai_mode: m })}
+                onBulanChange={b => patchForm({ wali_nilai_bulan: b })}
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <DownloadJpgButton elementId="wali-capture-nilai" filename={`rekap-nilai-${(studentData?.nama || "siswa").replace(/ /g, "-")}-${todayStr}.jpg`} />
+          </div>
+          <div id="wali-capture-nilai" className="card" style={{ padding: 0 }}>
+            <div className="card-header"><div className="card-title">📊 Nilai</div></div>
+            <div className="card-body">
+              {fNilai.length > 0 && (
+                <div className="grid grid-4 mb-4" style={{ gap: 12 }}>
+                  {fNilai.slice(0, 8).map(g => (
+                    <div key={g.id} style={{ background: "#f8fafc", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                      <div className="text-xs text-muted">{g.mataPelajaran}</div>
+                      <div style={{ fontSize: 28, fontWeight: 700 }}>{g.skor}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Tanggal</th><th>Mapel</th><th>Jenis</th><th>Nilai</th></tr></thead>
+                  <tbody>
+                    {fNilai.length === 0 ? <tr><td colSpan={4} className="empty-state">Tidak ada data nilai</td></tr> : fNilai.map(g => <tr key={g.id}><td className="text-sm">{g.tanggal}</td><td>{g.mataPelajaran}</td><td><Badge variant="gray">{g.jenisNilai}</Badge></td><td style={{ fontWeight: 700 }}>{g.skor}</td></tr>)}
+                  </tbody>
+                </table>
               </div>
-            )}
+            </div>
           </div>
         </div>
-      )}
+        );
+      })()}
+
+      {menu === "kegiatan" && (() => {
+        const kgMode  = formData.wali_kegiatan_mode  ?? "bulan";
+        const kgBulan = formData.wali_kegiatan_bulan ?? currentMonthStr;
+        const fKegiatan = studentActsAll.filter(a => filterByDateMode(a.tanggal, kgMode, kgBulan, todayStr));
+        return (
+        <div>
+          <div className="card mb-4">
+            <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+              <div className="card-title">📅 Bulan</div>
+              <WaliBulanFilter
+                mode={kgMode}
+                bulan={kgBulan}
+                onModeChange={m => patchForm({ wali_kegiatan_mode: m })}
+                onBulanChange={b => patchForm({ wali_kegiatan_bulan: b })}
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <DownloadJpgButton elementId="wali-capture-kegiatan" filename={`rekap-kegiatan-${(studentData?.nama || "siswa").replace(/ /g, "-")}-${todayStr}.jpg`} />
+          </div>
+          <div id="wali-capture-kegiatan" className="card" style={{ padding: 0 }}>
+            <div className="card-header"><div className="card-title">🎯 Laporan Kegiatan</div></div>
+            <div className="card-body">
+              {fKegiatan.length === 0 ? <div className="empty-state">Tidak ada kegiatan</div> : (
+                <div className="row-list">
+                  {fKegiatan.map(a => (
+                    <div key={a.id} className="row-item">
+                      <div><div style={{ fontWeight: 600 }}>{a.kategori}</div><div className="text-sm text-muted">{a.tanggal}</div>{a.deskripsi && <div className="text-xs text-muted">{a.deskripsi}</div>}</div>
+                      <StatusBadge status={a.penilaian} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {menu === "target" && (() => {
+        const targetMode  = formData.wali_target_mode  ?? "bulan";
+        const targetBulan = formData.wali_target_bulan ?? currentMonthStr;
+        const fTarget = studentTargetsAll.filter(t => filterByDateMode(t.tanggal, targetMode, targetBulan, todayStr));
+        return (
+        <div>
+          <div className="card mb-4">
+            <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+              <div className="card-title">📅 Bulan</div>
+              <WaliBulanFilter
+                mode={targetMode}
+                bulan={targetBulan}
+                onModeChange={m => patchForm({ wali_target_mode: m })}
+                onBulanChange={b => patchForm({ wali_target_bulan: b })}
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <DownloadJpgButton elementId="wali-capture-target" filename={`rekap-target-${(studentData?.nama || "siswa").replace(/ /g, "-")}-${todayStr}.jpg`} />
+          </div>
+          <div id="wali-capture-target" className="card" style={{ padding: 0 }}>
+            <div className="card-header"><div className="card-title">🏆 Target Pencapaian</div></div>
+            <div className="card-body">
+              {fTarget.length === 0 ? <div className="empty-state">Tidak ada target</div> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {fTarget.map(t => (
+                    <div key={t.id} style={{ background: "#f8fafc", borderRadius: 12, padding: 16 }}>
+                      <div className="flex justify-between items-center mb-2">
+                        <div style={{ fontWeight: 700 }}>{t.mataPelajaran}</div>
+                        <Badge variant="outline">{t.progressSaatIni}/{t.progressTotal} {t.satuan}</Badge>
+                      </div>
+                      <ProgressBar value={(t.progressSaatIni / t.progressTotal) * 100} />
+                      <div className="flex justify-between mt-2">
+                        <StatusBadge status={t.hasil} />
+                        <span className="text-xs text-muted">{t.tanggal}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {menu === "hafalan" && (() => {
+        const hafalanMode  = formData.wali_hafalan_mode  ?? "bulan";
+        const hafalanBulan = formData.wali_hafalan_bulan ?? currentMonthStr;
+        const fHafalan = studentZiyadahAll.filter(z => filterByDateMode(z.tanggal, hafalanMode, hafalanBulan, todayStr));
+        return (
+        <div>
+          <div className="card mb-4">
+            <div className="card-header" style={{ flexWrap: "wrap", gap: 10 }}>
+              <div className="card-title">📅 Bulan</div>
+              <WaliBulanFilter
+                mode={hafalanMode}
+                bulan={hafalanBulan}
+                onModeChange={m => patchForm({ wali_hafalan_mode: m })}
+                onBulanChange={b => patchForm({ wali_hafalan_bulan: b })}
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <DownloadJpgButton elementId="wali-capture-hafalan" filename={`rekap-hafalan-${(studentData?.nama || "siswa").replace(/ /g, "-")}-${todayStr}.jpg`} />
+          </div>
+          <div id="wali-capture-hafalan" className="card" style={{ padding: 0 }}>
+            <div className="card-header"><div className="card-title">📖 Surat yang Dihafal</div></div>
+            <div className="card-body">
+              {fHafalan.length === 0 ? <div className="empty-state">Tidak ada hafalan</div> : (
+                <div className="row-list">
+                  {fHafalan.map(z => (
+                    <div key={z.id} className="row-item">
+                      <div><div style={{ fontWeight: 600 }}>{z.surat}</div><div className="text-sm text-muted">{z.juz} — {z.tanggal}</div>{z.progress && <div className="text-xs text-muted">{z.progress}</div>}</div>
+                      <StatusBadge status={z.hasil} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
     </div>
   );
 }
