@@ -1238,12 +1238,22 @@ const MONTH_OPTIONS_ID = ["01","02","03","04","05","06","07","08","09","10","11"
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const today = () => new Date().toISOString().split("T")[0];
 const currentMonth = () => String(new Date().getMonth() + 1).padStart(2, "0");
+const previousMonth = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return String(d.getMonth() + 1).padStart(2, "0");
+};
 
-// Filter tanggal berdasarkan mode: "bulan" (bulan tertentu), "hari" (hari ini), "semua" (semua data)
+// Filter tanggal berdasarkan mode: "bulan" (bulan tertentu), "hari" (hari ini),
+// "2bulan" (bulan sekarang + 1 bulan sebelumnya), "semua" (semua data)
 const filterByDateMode = (tgl, mode, bulan, todayStr) => {
   if (!tgl) return false;
   if (mode === "semua") return true;
   if (mode === "hari") return tgl === todayStr;
+  if (mode === "2bulan") {
+    const mm = tgl.slice(5, 7);
+    return mm === currentMonth() || mm === previousMonth();
+  }
   return tgl.slice(5, 7) === bulan;
 };
 
@@ -1266,6 +1276,22 @@ if (typeof window !== "undefined") {
     }
   });
 }
+
+// ── Memoisasi ringan berbasis ref (bukan hook) — aman dipakai di dalam blok
+// `if (menu === ...)` yang bercabang, supaya tabel/riwayat besar tidak
+// dihitung ulang setiap kali ada klik/ketik di bagian lain halaman yang sama. ──
+function createLocalMemo(cacheRef) {
+  return function localMemo(key, deps, computeFn) {
+    const cache = cacheRef.current[key];
+    if (cache && cache.deps.length === deps.length && cache.deps.every((d, i) => d === deps[i])) {
+      return cache.value;
+    }
+    const value = computeFn();
+    cacheRef.current[key] = { deps, value };
+    return value;
+  };
+}
+
 const genId = () => `${Date.now()}_${Math.random().toString(36).slice(2,9)}`;
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
@@ -1463,6 +1489,13 @@ function App() {
   const [portal, setPortal] = useState("guru");
   const [menu, setMenu] = useState("dashboard");
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null); // { msg } — notifikasi ringan, tidak memblokir UI seperti alert()
+  const toastTimerRef = React.useRef(null);
+  const showToast = (msg) => {
+    setToast({ msg });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2200);
+  };
 
   // ── Firebase Firestore Integration ───────────────────────────────────────
   const SCRIPT_URL = "";
@@ -1819,7 +1852,7 @@ function App() {
     // Tulis HANYA item baru ke Firebase
     writeDocs("studentAttendance", newRecords);
     patchForm({ abs_students: null, abs_kelas: "", abs_tanggal: "" });
-    alert("✅ Absensi " + newRecords.length + " siswa berhasil disimpan!");
+    showToast("✅ Absensi " + newRecords.length + " siswa berhasil disimpan!");
   };
 
   const saveAbsensiGuru = () => {
@@ -1842,7 +1875,7 @@ function App() {
     });
     writeDoc("teacherAttendance", rec);
     patchForm({ abs_teacherId: "", abs_kelasGuru: "", abs_tanggalGuru: "", abs_statusGuru: "Hadir" });
-    alert("✅ Absensi guru berhasil disimpan!");
+    showToast("✅ Absensi guru berhasil disimpan!");
   };
 
   const saveJurnal = () => {
@@ -1883,7 +1916,7 @@ function App() {
     const patch = {};
     students.forEach(s => { patch[`kg_p_${kelas}_${s.id}`] = ""; });
     patchForm(patch);
-    alert(`✅ ${records.length} laporan kegiatan berhasil disimpan!`);
+    showToast(`✅ ${records.length} laporan kegiatan berhasil disimpan!`);
   };
 
   const saveTarget = () => {
@@ -2132,7 +2165,7 @@ function App() {
     { id: "rekap-nilai", label: "📈 Rekap Nilai" },
     { id: "cetak-rapor", label: "📄 Cetak Rapor" },
     { id: "performa-guru", label: "🏆 Performa Guru" },
-    { id: "diagram-kepatuhan", label: "📅 Diagram Kepatuhan Guru" },
+    { id: "diagram-kepatuhan", label: "📅 Inputan Harian Guru" },
     ...(canAccess("master-guru") ? [{ id: "master-guru", label: "📚 Master Guru" }] : []),
     ...(canAccess("kelola-pintasan") ? [{ id: "kelola-pintasan", label: "🔗 Pintasan" }] : []),
     ...(canAccess("pengaturan-mapel") ? [{ id: "pengaturan-mapel", label: "⚙️ Mapel" }] : []),
@@ -2179,6 +2212,18 @@ function App() {
           {syncMsg}
         </div>
       )}
+
+      {/* Toast — notifikasi sukses simpan yang tidak memblokir UI (pengganti alert()) */}
+      {toast && (
+        <div style={{
+          position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", zIndex:10001,
+          background:"#065f46", color:"white", padding:"12px 22px", fontSize:14, fontWeight:600,
+          borderRadius:12, boxShadow:"0 4px 20px rgba(0,0,0,.25)", pointerEvents:"none"
+        }}>
+          {toast.msg}
+        </div>
+      )}
+
 
       {/* Header */}
       <header className="header">
@@ -2680,6 +2725,9 @@ const PGChartCard = ({ title, items, color, type }) => (
 // ─── PORTAL GURU ─────────────────────────────────────────────────────────────
 function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selectedKelas, setSelectedKelas, searchQuery, setSearchQuery, user, canAccess, saveAbsensiSiswa, saveAbsensiGuru, saveJurnal, saveNilaiKelas, deleteItem, loginConfig = {}, saveLoginConfig, writeDoc }) {
 
+  const __memoCache = React.useRef({});
+  const localMemo = createLocalMemo(__memoCache);
+
   const todayStr = today();
   const currentMonthStr = String(new Date().getMonth() + 1).padStart(2, "0");
 
@@ -2948,7 +2996,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
                 </select>
               </div>
               <div className="select-wrap" style={{width:150}}>
-                <select className="select" style={{fontSize:13}} value={formData.rw_abs_bulan || ""} onChange={e => patchForm({rw_abs_bulan: e.target.value})}>
+                <select className="select" style={{fontSize:13}} value={formData.rw_abs_bulan !== undefined ? formData.rw_abs_bulan : currentMonthStr} onChange={e => patchForm({rw_abs_bulan: e.target.value})}>
                   <option value="">Semua Bulan</option>
                   {["01","02","03","04","05","06","07","08","09","10","11","12"].map(m => (
                     <option key={m} value={m}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(m)-1]}</option>
@@ -2960,11 +3008,16 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
               <table id="tbl-abs-siswa">
                 <thead><tr><th>Tanggal</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
-                  {(() => { const filtered = data.studentAttendance.filter(a =>
-                    (formData.rw_abs_kelas === "Semua" || !formData.rw_abs_kelas || a.kelas === formData.rw_abs_kelas) &&
-                    (!formData.rw_abs_nama || a.studentId === formData.rw_abs_nama) &&
-                    (!formData.rw_abs_bulan || (a.tanggal && a.tanggal.slice(5,7) === formData.rw_abs_bulan))
-                  ); return filtered.length === 0
+                  {(() => {
+                    const rwAbsBulanAktif = formData.rw_abs_bulan !== undefined ? formData.rw_abs_bulan : currentMonthStr;
+                    const filtered = localMemo("rw-abs-siswa", [data.studentAttendance, formData.rw_abs_kelas, formData.rw_abs_nama, rwAbsBulanAktif], () =>
+                      data.studentAttendance.filter(a =>
+                        (formData.rw_abs_kelas === "Semua" || !formData.rw_abs_kelas || a.kelas === formData.rw_abs_kelas) &&
+                        (!formData.rw_abs_nama || a.studentId === formData.rw_abs_nama) &&
+                        (!rwAbsBulanAktif || (a.tanggal && a.tanggal.slice(5,7) === rwAbsBulanAktif))
+                      )
+                    );
+                    return filtered.length === 0
                     ? <tr><td colSpan={5} className="empty-state">Belum ada data absensi</td></tr>
                     : filtered.map(a => (
                       <tr key={a.id}>
@@ -2974,7 +3027,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
                         <td><StatusBadge status={a.status} /></td>
                         <td><button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("studentAttendance", a.id, a.student?.nama)}><Icon.Trash /></button></td>
                       </tr>
-                  ))})()}
+                  ));})()}
                 </tbody>
               </table>
             </div>
@@ -3036,7 +3089,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
                 </select>
               </div>
               <div className="select-wrap" style={{ width:160 }}>
-                <select className="select" style={{ fontSize:13 }} value={formData.rw_guru_bulan || ""} onChange={e => patchForm({ rw_guru_bulan: e.target.value })}>
+                <select className="select" style={{ fontSize:13 }} value={formData.rw_guru_bulan !== undefined ? formData.rw_guru_bulan : currentMonthStr} onChange={e => patchForm({ rw_guru_bulan: e.target.value })}>
                   <option value="">Semua Bulan</option>
                   {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m,i) => (
                     <option key={m} value={m}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][i]}</option>
@@ -3049,11 +3102,14 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
                 <thead><tr><th>Nama Guru</th><th>Kelas</th><th>Tanggal</th><th>Status</th><th>Aksi</th></tr></thead>
                 <tbody>
                   {(() => {
-                    const fg = data.teacherAttendance.filter(a =>
-                      (formData.rw_guru_kelas === "Semua" || !formData.rw_guru_kelas || a.kelas === formData.rw_guru_kelas) &&
-                      (!formData.rw_guru_nama || a.teacherId === formData.rw_guru_nama) &&
-                      (!formData.rw_guru_bulan || (a.tanggal && a.tanggal.slice(5,7) === formData.rw_guru_bulan))
-                    ).sort((a,b) => (b.tanggal||"").localeCompare(a.tanggal||""));
+                    const rwGuruBulanAktif = formData.rw_guru_bulan !== undefined ? formData.rw_guru_bulan : currentMonthStr;
+                    const fg = localMemo("rw-abs-guru", [data.teacherAttendance, formData.rw_guru_kelas, formData.rw_guru_nama, rwGuruBulanAktif], () =>
+                      data.teacherAttendance.filter(a =>
+                        (formData.rw_guru_kelas === "Semua" || !formData.rw_guru_kelas || a.kelas === formData.rw_guru_kelas) &&
+                        (!formData.rw_guru_nama || a.teacherId === formData.rw_guru_nama) &&
+                        (!rwGuruBulanAktif || (a.tanggal && a.tanggal.slice(5,7) === rwGuruBulanAktif))
+                      ).sort((a,b) => (b.tanggal||"").localeCompare(a.tanggal||""))
+                    );
                     return fg.length === 0
                       ? <tr><td colSpan={5} className="empty-state">Belum ada data absensi guru</td></tr>
                       : fg.map(a => (
@@ -3784,7 +3840,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
     );
   }
 
-  // Diagram Kepatuhan Guru per Tanggal (format halaman per bulan)
+  // Inputan Harian Guru per Tanggal (format halaman per bulan)
   if (menu === "diagram-kepatuhan") {
     const MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
     const dkKelas = formData.dk_kelas ?? "Semua";
@@ -3872,11 +3928,11 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
         <div className="card mb-4">
           <div className="card-header" style={{ flexWrap:"wrap", gap:10 }}>
             <div>
-              <div className="card-title">📅 Diagram Kepatuhan Guru per Tanggal</div>
+              <div className="card-title">📅 Inputan Harian Guru per Tanggal</div>
               <div className="card-sub">Hijau = sudah mengisi form, Merah = belum mengisi form. Kolom "Jumlah Isi Form" menunjukkan total kategori yang terisi. 2 tanggal ditampilkan berdampingan per layar/halaman.</div>
             </div>
             {dkBulan !== "" && (
-              <button id="btn-pdf-dk" onClick={() => downloadTablePDF("dk-capture", `Diagram Kepatuhan Guru — ${MONTH_NAMES[parseInt(dkBulan,10)]} ${dkTahun}`, `Kepatuhan-Guru-${MONTH_NAMES[parseInt(dkBulan,10)]}-${dkTahun}`)}
+              <button id="btn-pdf-dk" onClick={() => downloadTablePDF("dk-capture", `Inputan Harian Guru — ${MONTH_NAMES[parseInt(dkBulan,10)]} ${dkTahun}`, `Kepatuhan-Guru-${MONTH_NAMES[parseInt(dkBulan,10)]}-${dkTahun}`)}
                 style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
             )}
           </div>
@@ -4434,6 +4490,9 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
 // ─── PORTAL SISWA ─────────────────────────────────────────────────────────────
 function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user, canAccess, saveHarian, saveKegiatan, saveKegiatanKelas, saveTarget, saveTargetKelas, saveZiyadah, saveZiyadahKelas, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
+  const __memoCache = React.useRef({});
+  const localMemo = createLocalMemo(__memoCache);
+
   const todayStr = today();
   const currentMonthStr = String(new Date().getMonth() + 1).padStart(2, "0");
 
@@ -4588,13 +4647,21 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
   }
 
   if (menu === "kegiatan") {
+    // Kelompokkan siswa & laporan kegiatan per kelas sekali jalan (bukan 8x filter penuh setiap render)
+    const kgGrouped = localMemo("kegiatan-grouped", [data.students, data.activities], () => {
+      const studentsByKelas = {};
+      for (const s of data.students) { (studentsByKelas[s.class_name] ||= []).push(s); }
+      const actsByKelas = {};
+      for (const a of data.activities) { (actsByKelas[a.kelas] ||= []).push(a); }
+      return { studentsByKelas, actsByKelas };
+    });
     return (
       <div>
         {/* Per-Kelas Grid Input */}
         <div className="grid grid-3">
           {KELAS_LIST.filter(k => k !== "Semua").map(kelas => {
-            const students = data.students.filter(s => s.class_name === kelas);
-            const kelasActs = data.activities.filter(a => a.kelas === kelas);
+            const students = kgGrouped.studentsByKelas[kelas] || [];
+            const kelasActs = kgGrouped.actsByKelas[kelas] || [];
             const isOpen = formData.expandedKgKelas === kelas;
             return (
               <div key={kelas} className="card" style={isOpen ? { gridColumn:"span 3" } : {}}>
@@ -4717,7 +4784,7 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                 </select>
               </div>
               <div className="select-wrap" style={{width:150}}>
-                <select className="select" style={{fontSize:13}} value={formData.kg_fbulan || ""} onChange={e => patchForm({kg_fbulan: e.target.value})}>
+                <select className="select" style={{fontSize:13}} value={formData.kg_fbulan !== undefined ? formData.kg_fbulan : currentMonthStr} onChange={e => patchForm({kg_fbulan: e.target.value})}>
                   <option value="">Semua Bulan</option>
                   {["01","02","03","04","05","06","07","08","09","10","11","12"].map(bln => (
                     <option key={bln} value={bln}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(bln)-1]}</option>
@@ -4731,10 +4798,13 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                 <thead><tr><th>Tanggal</th><th>Nama Siswa</th><th>Kelas</th><th>Mata Pelajaran</th><th>Penilaian</th><th>Aksi</th></tr></thead>
                 <tbody>
                   {(() => {
-                    const fkg = data.activities.filter(a =>
-                      (!formData.kg_fkelas || formData.kg_fkelas === "Semua" || a.kelas === formData.kg_fkelas)
-                      && (!formData.kg_fnama || a.studentId === formData.kg_fnama)
-                      && (!formData.kg_fbulan || (a.tanggal && a.tanggal.slice(5,7) === formData.kg_fbulan))
+                    const kgBulanAktif = formData.kg_fbulan !== undefined ? formData.kg_fbulan : currentMonthStr;
+                    const fkg = localMemo("kegiatan-riwayat", [data.activities, formData.kg_fkelas, formData.kg_fnama, kgBulanAktif], () =>
+                      data.activities.filter(a =>
+                        (!formData.kg_fkelas || formData.kg_fkelas === "Semua" || a.kelas === formData.kg_fkelas)
+                        && (!formData.kg_fnama || a.studentId === formData.kg_fnama)
+                        && (!kgBulanAktif || (a.tanggal && a.tanggal.slice(5,7) === kgBulanAktif))
+                      )
                     );
                     if (fkg.length === 0) return <tr><td colSpan={6} className="empty-state">Belum ada data laporan kegiatan</td></tr>;
                     return fkg.map(a => {
@@ -5242,6 +5312,10 @@ function WaliBulanFilter({ mode, bulan, onModeChange, onBulanChange }) {
           ))}
         </select>
       </div>
+      <button onClick={() => onModeChange("2bulan")}
+        style={{ padding: "5px 10px", fontSize: 12, fontWeight: 700, background: mode === "2bulan" ? "#1d7a5f" : "#d1fae5", color: mode === "2bulan" ? "white" : "#065f46", border: "none", borderRadius: 8, cursor: "pointer" }}>
+        {MONTH_NAMES_ID[(parseInt(previousMonth(),10)-1)]} – {MONTH_NAMES_ID[(parseInt(currentMonth(),10)-1)]}
+      </button>
       <button onClick={() => onModeChange("hari")}
         style={{ padding: "5px 10px", fontSize: 12, fontWeight: 700, background: mode === "hari" ? "#6b3fa0" : "#ede9fe", color: mode === "hari" ? "white" : "#6b3fa0", border: "none", borderRadius: 8, cursor: "pointer" }}>Hari Ini</button>
       <button onClick={() => onModeChange("semua")}
@@ -5300,7 +5374,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
   const sid = studentData?.id || formData.wali_siswa;
 
   // ── Filter Bulan/Hari Ini/Semua untuk Dashboard (otomatis bulan berjalan) ──
-  const dashMode  = formData.wali_dash_mode  ?? "bulan";
+  const dashMode  = formData.wali_dash_mode  ?? "2bulan";
   const dashBulan = formData.wali_dash_bulan ?? currentMonthStr;
   const inDashRange = tgl => filterByDateMode(tgl, dashMode, dashBulan, todayStr);
 
@@ -5543,7 +5617,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       )}
 
       {menu === "notifikasi" && (() => {
-        const notifMode  = formData.wali_notif_mode  ?? "bulan";
+        const notifMode  = formData.wali_notif_mode  ?? "2bulan";
         const notifBulan = formData.wali_notif_bulan ?? currentMonthStr;
         const inNotifRange = tgl => filterByDateMode(tgl, notifMode, notifBulan, todayStr);
         const filteredAnnouncements = data.announcements.filter(a => !a.tanggal || inNotifRange(a.tanggal));
@@ -5623,7 +5697,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       })()}
 
       {menu === "absensi" && (() => {
-        const absMode  = formData.wali_absensi_mode  ?? "bulan";
+        const absMode  = formData.wali_absensi_mode  ?? "2bulan";
         const absBulan = formData.wali_absensi_bulan ?? currentMonthStr;
         const fAbs = studentAttAll.filter(a => filterByDateMode(a.tanggal, absMode, absBulan, todayStr));
         return (
@@ -5671,7 +5745,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       })()}
 
       {menu === "harian" && (() => {
-        const harianMode  = formData.wali_harian_mode  ?? "bulan";
+        const harianMode  = formData.wali_harian_mode  ?? "2bulan";
         const harianBulan = formData.wali_harian_bulan ?? currentMonthStr;
         const fHarian = studentReportsAll.filter(r => filterByDateMode(r.tanggal, harianMode, harianBulan, todayStr));
         return (
@@ -5714,7 +5788,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       })()}
 
       {menu === "nilai" && (() => {
-        const nilaiMode  = formData.wali_nilai_mode  ?? "bulan";
+        const nilaiMode  = formData.wali_nilai_mode  ?? "2bulan";
         const nilaiBulan = formData.wali_nilai_bulan ?? currentMonthStr;
         const fNilai = studentGradesAll.filter(g => filterByDateMode(g.tanggal, nilaiMode, nilaiBulan, todayStr));
         return (
@@ -5761,7 +5835,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       })()}
 
       {menu === "kegiatan" && (() => {
-        const kgMode  = formData.wali_kegiatan_mode  ?? "bulan";
+        const kgMode  = formData.wali_kegiatan_mode  ?? "2bulan";
         const kgBulan = formData.wali_kegiatan_bulan ?? currentMonthStr;
         const fKegiatan = studentActsAll.filter(a => filterByDateMode(a.tanggal, kgMode, kgBulan, todayStr));
         return (
@@ -5800,7 +5874,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       })()}
 
       {menu === "target" && (() => {
-        const targetMode  = formData.wali_target_mode  ?? "bulan";
+        const targetMode  = formData.wali_target_mode  ?? "2bulan";
         const targetBulan = formData.wali_target_bulan ?? currentMonthStr;
         const fTarget = studentTargetsAll.filter(t => filterByDateMode(t.tanggal, targetMode, targetBulan, todayStr));
         return (
@@ -5846,7 +5920,7 @@ function PortalWali({ menu, data, formData, patchForm, user }) {
       })()}
 
       {menu === "hafalan" && (() => {
-        const hafalanMode  = formData.wali_hafalan_mode  ?? "bulan";
+        const hafalanMode  = formData.wali_hafalan_mode  ?? "2bulan";
         const hafalanBulan = formData.wali_hafalan_bulan ?? currentMonthStr;
         const fHafalan = studentZiyadahAll.filter(z => filterByDateMode(z.tanggal, hafalanMode, hafalanBulan, todayStr));
         return (
