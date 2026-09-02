@@ -1892,10 +1892,34 @@ function App() {
     const s = data.students.find(s => s.id === formData.h_siswa);
     if (!s || !formData.h_bahasan || !formData.h_hasil) { alert("⚠️ Lengkapi data harian!"); return; }
     const rec = { id: genId(), studentId: s.id, tanggal: formData.h_tanggal || today(), kelas: s.class_name, bahasan: formData.h_bahasan, halaman: formData.h_halaman || "", hasil: formData.h_hasil, catatan: formData.h_catatan || "", teacherId: user?.teacherId || null };
-    setData(d => { const next = { ...d, dailyReports: [...d.dailyReports, rec] }; persistDataAsync(next); return next; });
+    setData(d => { const next = { ...d, dailyReports: [rec, ...d.dailyReports] }; persistDataAsync(next); return next; });
     writeDoc("dailyReports", rec);
     patchForm({ h_bahasan: "", h_halaman: "", h_catatan: "" });
     alert("✅ Laporan harian berhasil disimpan!");
+  };
+
+  const saveHarianKelas = (kelas) => {
+    const bahasan = formData[`h_bahasan_${kelas}`];
+    const tanggal = formData[`h_tanggal_${kelas}`] || today();
+    if (!bahasan) { alert("Isi bahasan/topik pembelajaran terlebih dahulu!"); return; }
+    const students = data.students.filter(s => s.class_name === kelas);
+    const records  = students.map(s => ({
+      id: genId(), studentId: s.id, tanggal, kelas: s.class_name || kelas,
+      bahasan,
+      halaman: formData[`h_halaman_${kelas}`] || "",
+      hasil: formData[`h_hasil_${kelas}_${s.id}`] || "Lulus",
+      catatan: formData[`h_cat_${kelas}_${s.id}`] || "",
+      teacherId: user?.teacherId || null
+    }));
+    setData(d => { const next = { ...d, dailyReports: [...records, ...d.dailyReports] }; persistDataAsync(next); return next; });
+    writeDocs("dailyReports", records);
+    const patch = { [`h_bahasan_${kelas}`]: "", [`h_halaman_${kelas}`]: "" };
+    students.forEach(s => {
+      patch[`h_hasil_${kelas}_${s.id}`] = "";
+      patch[`h_cat_${kelas}_${s.id}`] = "";
+    });
+    patchForm(patch);
+    alert(`✅ ${records.length} laporan harian berhasil disimpan!`);
   };
 
   const saveKegiatan = () => {};
@@ -1911,7 +1935,7 @@ function App() {
       deskripsi: "",
       teacherId: user?.teacherId || null
     }));
-    setData(d => { const next = { ...d, activities: [...d.activities, ...records] }; persistDataAsync(next); return next; });
+    setData(d => { const next = { ...d, activities: [...records, ...d.activities] }; persistDataAsync(next); return next; });
     writeDocs("activities", records);
     const patch = {};
     students.forEach(s => { patch[`kg_p_${kelas}_${s.id}`] = ""; });
@@ -2341,7 +2365,7 @@ function App() {
           <PortalGuru menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} writeDoc={writeDoc} />
         )}
         {portal === "siswa" && (
-          <PortalSiswa menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveTargetKelas={saveTargetKelas} saveZiyadah={saveZiyadah} saveZiyadahKelas={saveZiyadahKelas} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
+          <PortalSiswa menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveHarianKelas={saveHarianKelas} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveTargetKelas={saveTargetKelas} saveZiyadah={saveZiyadah} saveZiyadahKelas={saveZiyadahKelas} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
         )}
         {portal === "wali" && (
           <PortalWali menu={menu} data={data} formData={formData} patchForm={patchForm} user={user} />
@@ -4489,7 +4513,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
 
 // ─── PORTAL SISWA ─────────────────────────────────────────────────────────────
-function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user, canAccess, saveHarian, saveKegiatan, saveKegiatanKelas, saveTarget, saveTargetKelas, saveZiyadah, saveZiyadahKelas, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
+function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user, canAccess, saveHarian, saveHarianKelas, saveKegiatan, saveKegiatanKelas, saveTarget, saveTargetKelas, saveZiyadah, saveZiyadahKelas, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
   const __memoCache = React.useRef({});
   const localMemo = createLocalMemo(__memoCache);
 
@@ -4541,59 +4565,131 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
   }
 
   if (menu === "harian") {
+    const hrGrouped = localMemo("harian-grouped", [data.students, data.dailyReports], () => {
+      const studentsByKelas = {};
+      for (const s of data.students) { (studentsByKelas[s.class_name] ||= []).push(s); }
+      const reportsByKelas = {};
+      for (const r of data.dailyReports) { (reportsByKelas[r.kelas] ||= []).push(r); }
+      return { studentsByKelas, reportsByKelas };
+    });
     return (
-      <div className="card">
-        <div className="card-header"><div className="card-title">📝 Laporan Harian</div></div>
-        <div className="card-body">
-          <div className="grid grid-2 mb-4">
-            {[["Kelas", "h_kelas", KELAS_LIST.filter(k => k !== "Semua"), "select"], ["Tanggal", "h_tanggal", null, "date"]].map(([label, key, opts, type]) => (
-              <div key={key} className="form-group">
-                <label className="label">{label} *</label>
-                {type === "select" ? (
-                  <div className="select-wrap"><select className="select" value={formData[key] || ""} onChange={e => patchForm({ [key]: e.target.value, h_siswa: "" })}>
-                    <option value="">-- Pilih --</option>
-                    {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select></div>
-                ) : (
-                  <input className="input" type="date" value={formData[key] || todayStr} onChange={e => patchForm({ [key]: e.target.value })} />
+      <div>
+        {/* Per-Kelas Grid Input */}
+        <div className="grid grid-3">
+          {KELAS_LIST.filter(k => k !== "Semua").map(kelas => {
+            const students = hrGrouped.studentsByKelas[kelas] || [];
+            const kelasReports = hrGrouped.reportsByKelas[kelas] || [];
+            const isOpen = formData.expandedHrKelas === kelas;
+            return (
+              <div key={kelas} className="card" style={isOpen ? { gridColumn:"span 3" } : {}}>
+                <div className="card-header">
+                  <div className="flex gap-3 items-center">
+                    <div style={{ width:40, height:40, background:"#fef3c7", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>📝</div>
+                    <div>
+                      <div className="card-title">{kelas}</div>
+                      <div className="card-sub">{students.length} siswa · {kelasReports.length} laporan</div>
+                    </div>
+                  </div>
+                  <button className="btn btn-outline btn-sm" onClick={() => patchForm({ expandedHrKelas: isOpen ? null : kelas })}>
+                    {isOpen ? "Tutup" : "Input Harian"}
+                  </button>
+                </div>
+
+                {isOpen && (
+                  <div className="card-body">
+                    <div className="grid grid-2">
+                      {/* Input Panel */}
+                      <div style={{ background:"#fef3c7", borderRadius:12, padding:16 }}>
+                        <div style={{ fontWeight:700, marginBottom:12, color:"#92400e" }}>⚙️ Pengaturan Input</div>
+                        <div className="grid grid-2" style={{ gap:10 }}>
+                          <div className="form-group" style={{ gridColumn:"span 2" }}>
+                            <label className="label">Bahasan / Topik *</label>
+                            <input className="input" placeholder="Topik pembelajaran hari ini" value={formData[`h_bahasan_${kelas}`] || ""} onChange={e => patchForm({ [`h_bahasan_${kelas}`]: e.target.value })} />
+                          </div>
+                          <div className="form-group">
+                            <label className="label">Halaman</label>
+                            <input className="input" placeholder="Halaman buku/iqro" value={formData[`h_halaman_${kelas}`] || ""} onChange={e => patchForm({ [`h_halaman_${kelas}`]: e.target.value })} />
+                          </div>
+                          <div className="form-group">
+                            <label className="label">Tanggal</label>
+                            <input className="input" type="date" value={formData[`h_tanggal_${kelas}`] || todayStr} onChange={e => patchForm({ [`h_tanggal_${kelas}`]: e.target.value })} />
+                          </div>
+                          <div className="form-group" style={{ gridColumn:"span 2" }}>
+                            <button className="btn btn-blue w-full" onClick={() => saveHarianKelas(kelas)}><Icon.Save /> Simpan Semua</button>
+                          </div>
+                        </div>
+
+                        <div style={{ maxHeight:280, overflowY:"auto", marginTop:8 }}>
+                          <table>
+                            <thead><tr><th style={{width:28}}>No</th><th style={{width:70}}>NIS</th><th>Nama</th><th style={{width:110}}>Hasil</th><th style={{width:150}}>Catatan</th></tr></thead>
+                            <tbody>
+                              {students.length === 0
+                                ? <tr><td colSpan={5} className="empty-state">Tidak ada siswa</td></tr>
+                                : students.map((s, i) => (
+                                  <tr key={s.id}>
+                                    <td className="text-sm">{i+1}</td>
+                                    <td className="text-sm">{s.nis}</td>
+                                    <td className="text-sm" style={{fontWeight:600}}>{s.nama}</td>
+                                    <td>
+                                      <div className="select-wrap" style={{minWidth:100}}>
+                                        <select className="select" style={{fontSize:12, padding:"5px 26px 5px 8px"}}
+                                          value={formData[`h_hasil_${kelas}_${s.id}`] || "Lulus"}
+                                          onChange={e => patchForm({ [`h_hasil_${kelas}_${s.id}`]: e.target.value })}>
+                                          {HASIL_LIST.map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                      </div>
+                                    </td>
+                                    <td>
+                                      <input className="input" placeholder="Catatan..." style={{ fontSize:12, padding:"5px 8px" }}
+                                        value={formData[`h_cat_${kelas}_${s.id}`] || ""} onChange={e => patchForm({ [`h_cat_${kelas}_${s.id}`]: e.target.value })} />
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Riwayat per kelas */}
+                      <div>
+                        <div style={{ fontWeight:700, marginBottom:12 }}>📊 Laporan Terbaru — {kelas}</div>
+                        <div style={{ maxHeight:320, overflowY:"auto" }}>
+                          {kelasReports.length === 0 ? (
+                            <div className="empty-state">Belum ada laporan</div>
+                          ) : (
+                            <table>
+                              <thead><tr><th>Nama</th><th>Bahasan</th><th>Hasil</th><th></th></tr></thead>
+                              <tbody>
+                                {kelasReports.slice(0,15).map(r => {
+                                  const s = data.students.find(s => s.id === r.studentId);
+                                  return (
+                                    <tr key={r.id}>
+                                      <td className="text-sm" style={{fontWeight:600}}>{s?.nama}</td>
+                                      <td className="text-sm">{r.bahasan}</td>
+                                      <td><StatusBadge status={r.hasil} /></td>
+                                      <td><button className="btn btn-danger btn-sm btn-icon" onClick={() => deleteItem("dailyReports", r.id, s?.nama)}><Icon.Trash /></button></td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
-            ))}
-            <div className="form-group">
-              <label className="label">Nama Siswa *</label>
-              <div className="select-wrap"><select className="select" value={formData.h_siswa || ""} onChange={e => patchForm({ h_siswa: e.target.value })} disabled={!formData.h_kelas}>
-                <option value="">{formData.h_kelas ? "-- Pilih Siswa --" : "Pilih kelas dulu"}</option>
-                {data.students.filter(s => s.class_name === formData.h_kelas).map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-              </select></div>
-            </div>
-            <div className="form-group">
-              <label className="label">Halaman</label>
-              <input className="input" placeholder="Halaman buku/iqro" value={formData.h_halaman || ""} onChange={e => patchForm({ h_halaman: e.target.value })} />
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="label">Bahasan *</label>
-            <input className="input" placeholder="Topik pembelajaran hari ini" value={formData.h_bahasan || ""} onChange={e => patchForm({ h_bahasan: e.target.value })} />
-          </div>
-          <div className="form-group">
-            <label className="label">Hasil *</label>
-            <div className="select-wrap"><select className="select" value={formData.h_hasil || ""} onChange={e => patchForm({ h_hasil: e.target.value })}>
-              <option value="">-- Pilih --</option>
-              {HASIL_LIST.map(h => <option key={h} value={h}>{h}</option>)}
-            </select></div>
-          </div>
-          <div className="form-group">
-            <label className="label">Catatan</label>
-            <textarea className="textarea" value={formData.h_catatan || ""} onChange={e => patchForm({ h_catatan: e.target.value })} />
-          </div>
-          <button className="btn btn-blue" onClick={saveHarian} disabled={!formData.h_siswa || !formData.h_bahasan || !formData.h_hasil}><Icon.Save /> Simpan Laporan</button>
+            );
+          })}
+        </div>
 
-          <div className="mt-6">
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-              <div style={{ fontWeight:700 }}>📝 Riwayat Laporan Harian</div>
-              <button id="btn-pdf-tbl-harian" onClick={() => downloadTablePDF("tbl-harian","Riwayat Laporan Harian","Laporan-Harian")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
-            </div>
-            <div className="flex gap-2 items-center mb-3" style={{flexWrap:"wrap",gap:8}}>
+        {/* Riwayat */}
+        <div className="card mb-4">
+          <div className="card-header">
+            <div className="card-title">📝 Riwayat Laporan Harian</div>
+            <button id="btn-pdf-tbl-harian" onClick={() => downloadTablePDF("tbl-harian","Riwayat Laporan Harian","Laporan-Harian")} style={{ padding:"5px 12px", fontSize:12, fontWeight:700, background:"#dc2626", color:"white", border:"none", borderRadius:8, cursor:"pointer" }}>⬇️ PDF</button>
+            <div className="flex gap-2 items-center" style={{flexWrap:"wrap",gap:8}}>
               <div className="select-wrap" style={{width:140}}>
                 <select className="select" style={{fontSize:13}} value={formData.hr_fkelas || "Semua"} onChange={e => patchForm({hr_fkelas: e.target.value, hr_fnama: ""})}>
                   {KELAS_LIST.map(k => <option key={k} value={k}>{k}</option>)}
@@ -4606,21 +4702,23 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                 </select>
               </div>
               <div className="select-wrap" style={{width:150}}>
-                <select className="select" style={{fontSize:13}} value={formData.hr_fbulan || ""} onChange={e => patchForm({hr_fbulan: e.target.value})}>
-                  <option value="">Semua Bulan</option>
+                <select className="select" style={{fontSize:13}} value={formData.hr_fbulan !== undefined ? formData.hr_fbulan : currentMonthStr} onChange={e => patchForm({hr_fbulan: e.target.value})}>
                   {["01","02","03","04","05","06","07","08","09","10","11","12"].map(bln => (
                     <option key={bln} value={bln}>{["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"][parseInt(bln)-1]}</option>
                   ))}
+                  <option value="">Semua Bulan</option>
                 </select>
               </div>
             </div>
+          </div>
+          <div className="card-body">
             <div id="tbl-harian" className="row-list">
               {(() => {
+                const hrBulanAktif = formData.hr_fbulan !== undefined ? formData.hr_fbulan : currentMonthStr;
                 const fhr = data.dailyReports.filter(r => {
-                  const s = data.students.find(s => s.id === r.studentId);
-                  return (!formData.hr_fkelas || formData.hr_fkelas === "Semua" || s?.class_name === formData.hr_fkelas)
+                  return (!formData.hr_fkelas || formData.hr_fkelas === "Semua" || r.kelas === formData.hr_fkelas)
                     && (!formData.hr_fnama || r.studentId === formData.hr_fnama)
-                    && (!formData.hr_fbulan || (r.tanggal && r.tanggal.slice(5,7) === formData.hr_fbulan));
+                    && (!hrBulanAktif || (r.tanggal && r.tanggal.slice(5,7) === hrBulanAktif));
                 });
                 if (fhr.length === 0) return <div className="empty-state">Belum ada laporan harian</div>;
                 return fhr.map(r => {
