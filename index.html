@@ -1838,20 +1838,22 @@ function App() {
     if (!formData.abs_kelas)    { alert("⚠️ Pilih kelas terlebih dahulu!"); return; }
     if (!formData.abs_students) { alert("⚠️ Klik tombol Muat Data terlebih dahulu!"); return; }
     const tanggal = formData.abs_tanggal || today();
+    const guruId = resolveGuruId(formData.abs_kelas, "abs");
     const newRecords = formData.abs_students.map(s => ({
       id: genId(), studentId: s.id, tanggal,
       kelas: s.class_name || formData.abs_kelas, status: s.status || "Hadir",
+      teacherId: guruId,
       student: { nama: s.nama }
     }));
     // Update state lokal (tambah ke array) - functional updater agar tidak stale
     setData(d => {
-      const next = { ...d, studentAttendance: [...d.studentAttendance, ...newRecords] };
+      const next = { ...d, studentAttendance: [...newRecords, ...d.studentAttendance] };
       persistDataAsync(next);
       return next;
     });
     // Tulis HANYA item baru ke Firebase
     writeDocs("studentAttendance", newRecords);
-    patchForm({ abs_students: null, abs_kelas: "", abs_tanggal: "" });
+    patchForm({ abs_students: null, abs_kelas: "", abs_tanggal: "", abs_guru: "" });
     showToast("✅ Absensi " + newRecords.length + " siswa berhasil disimpan!");
   };
 
@@ -2984,6 +2986,13 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
               <label className="label">Tanggal *</label>
               <input className="input" type="date" value={formData.abs_tanggal || todayStr} onChange={e => patchForm({ abs_tanggal: e.target.value })} />
             </div>
+            <div className="form-group" style={{ gridColumn:"span 2" }}>
+              <label className="label">Guru *</label>
+              <div className="select-wrap"><select className="select" value={formData.abs_guru ?? resolveGuruId(formData.abs_kelas, "abs") ?? ""} onChange={e => patchForm({ abs_guru: e.target.value })}>
+                <option value="">-- Pilih Guru --</option>
+                {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
+              </select></div>
+            </div>
           </div>
           <div className="flex gap-2 mb-4">
             <button className="btn btn-outline" onClick={loadStudents} disabled={!formData.abs_kelas}>📋 Muat Data</button>
@@ -3899,7 +3908,8 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
     // ── Set lookup O(1) — dibangun sekali per render, bukan per-sel tabel ──
     const mkSet = (arr, keyFn) => { const s = new Set(); for (const it of arr) s.add(keyFn(it)); return s; };
-    const setAbsensiSiswa = mkSet(data.studentAttendance, a => a.kelas + "|" + a.tanggal);
+    const setAbsensiSiswaById    = mkSet(data.studentAttendance, a => a.teacherId + "|" + a.tanggal);
+    const setAbsensiSiswaByKelas = mkSet(data.studentAttendance, a => a.kelas + "|" + a.tanggal);
     const setAbsensiGuru  = mkSet(data.teacherAttendance, a => a.teacherId + "|" + a.tanggal);
     const setJurnal       = mkSet(data.journals,          j => j.teacherId + "|" + j.tanggal);
     const setHarian       = mkSet(data.dailyReports,      r => r.teacherId + "|" + r.tanggal);
@@ -3909,7 +3919,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
     const setZiyadah      = mkSet(data.ziyadah,            z => z.teacherId + "|" + z.tanggal);
 
     const DK_CATEGORIES = [
-      { key: "absensiSiswa",     label: "ABSENSI SISWA",    check: (t, tgl) => setAbsensiSiswa.has(t.kelas + "|" + tgl) },
+      { key: "absensiSiswa",     label: "ABSENSI SISWA",    check: (t, tgl) => setAbsensiSiswaById.has(t.id + "|" + tgl) || setAbsensiSiswaByKelas.has(t.kelas + "|" + tgl) },
       { key: "absensiGuru",      label: "ABSENSI GURU",     check: (t, tgl) => setAbsensiGuru.has(t.id + "|" + tgl) },
       { key: "jurnalGuru",       label: "JURNAL GURU",      check: (t, tgl) => setJurnal.has(t.id + "|" + tgl) },
       { key: "laporanHarian",    label: "LAPORAN HARIAN",   check: (t, tgl) => setHarian.has(t.id + "|" + tgl) },
