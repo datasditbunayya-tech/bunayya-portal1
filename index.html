@@ -1888,6 +1888,19 @@ function App() {
     alert("✅ Jurnal berhasil disimpan!");
   };
 
+  // Menentukan guru yang bertanggung jawab atas satu input per-kelas.
+  // Prioritas: guru yang dipilih manual pada form (formPrefix_guru_kelas) →
+  // guru yang sedang login (jika login sebagai guru) → wali kelas yang
+  // tercatat untuk kelas tsb → null (biar tetap tersimpan, tapi tidak akan
+  // tercentang di manapun sampai guru dipilih ulang).
+  const resolveGuruId = (kelas, formPrefix) => {
+    const dipilih = formData[`${formPrefix}_guru_${kelas}`];
+    if (dipilih) return dipilih;
+    if (user?.role === "teacher" && user.teacherId) return user.teacherId;
+    const wali = data.teachers.find(t => t.kelas === kelas);
+    return wali ? wali.id : null;
+  };
+
   const saveHarian = () => {
     const s = data.students.find(s => s.id === formData.h_siswa);
     if (!s || !formData.h_bahasan || !formData.h_hasil) { alert("⚠️ Lengkapi data harian!"); return; }
@@ -1909,7 +1922,7 @@ function App() {
       halaman: formData[`h_halaman_${kelas}`] || "",
       hasil: formData[`h_hasil_${kelas}_${s.id}`] || "Lulus",
       catatan: formData[`h_cat_${kelas}_${s.id}`] || "",
-      teacherId: user?.teacherId || null
+      teacherId: resolveGuruId(kelas, "h")
     }));
     setData(d => { const next = { ...d, dailyReports: [...records, ...d.dailyReports] }; persistDataAsync(next); return next; });
     writeDocs("dailyReports", records);
@@ -1933,7 +1946,7 @@ function App() {
       kategori: mapel, mataPelajaran: mapel,
       penilaian: formData[`kg_p_${kelas}_${s.id}`] || "Sangat Baik",
       deskripsi: "",
-      teacherId: user?.teacherId || null
+      teacherId: resolveGuruId(kelas, "kg")
     }));
     setData(d => { const next = { ...d, activities: [...records, ...d.activities] }; persistDataAsync(next); return next; });
     writeDocs("activities", records);
@@ -1980,7 +1993,7 @@ function App() {
       satuan: formData[`tr_ket_${kelas}_${s.id}`] || "",
       hasil: formData[`tr_hasil_${kelas}_${s.id}`] || "Lulus",
       catatan: formData[`tr_cat_${kelas}_${s.id}`] || "",
-      teacherId: user?.teacherId || null
+      teacherId: resolveGuruId(kelas, "tr")
     }));
     setData(d => { const next = { ...d, targets: [...records, ...d.targets] }; persistDataAsync(next); return next; });
     writeDocs("targets", records);
@@ -2022,7 +2035,7 @@ function App() {
         progress: `${pv}/${pt}`,
         keterangan: formData[`z_ket_${kelas}_${s.id}`] || "",
         catatan: formData[`z_cat_${kelas}_${s.id}`] || "",
-        teacherId: user?.teacherId || null
+        teacherId: resolveGuruId(kelas, "z")
       };
     });
     setData(d => { const next = { ...d, ziyadah: [...records, ...d.ziyadah] }; persistDataAsync(next); return next; });
@@ -2049,7 +2062,7 @@ function App() {
     const students = data.students.filter(s => s.class_name === kelas);
     const records  = students
       .filter(s => formData[`nm_v_${kelas}_${s.id}`])
-      .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas: s.class_name || kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama }, teacherId: user?.teacherId || null }));
+      .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas: s.class_name || kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama }, teacherId: resolveGuruId(kelas, "nm") }));
     if (!records.length) { alert("Masukkan nilai untuk minimal satu siswa!"); return; }
     setData(d => { const next = { ...d, grades: [...d.grades, ...records] }; persistDataAsync(next); return next; });
     writeDocs("grades", records);
@@ -2362,10 +2375,10 @@ function App() {
       {/* Content */}
       <div className="content">
         {portal === "guru" && (
-          <PortalGuru menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} writeDoc={writeDoc} />
+          <PortalGuru menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} searchQuery={searchQuery} setSearchQuery={setSearchQuery} user={user} canAccess={canAccess} saveAbsensiSiswa={saveAbsensiSiswa} saveAbsensiGuru={saveAbsensiGuru} saveJurnal={saveJurnal} saveNilaiKelas={saveNilaiKelas} resolveGuruId={resolveGuruId} deleteItem={deleteItem} addDialog={addDialog} setAddDialog={setAddDialog} loginConfig={loginConfig} saveLoginConfig={saveLoginConfig} writeDoc={writeDoc} />
         )}
         {portal === "siswa" && (
-          <PortalSiswa menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveHarianKelas={saveHarianKelas} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveTargetKelas={saveTargetKelas} saveZiyadah={saveZiyadah} saveZiyadahKelas={saveZiyadahKelas} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
+          <PortalSiswa menu={menu} data={data} setData={setData} patchData={patchData} formData={formData} patchForm={patchForm} user={user} canAccess={canAccess} saveHarian={saveHarian} saveHarianKelas={saveHarianKelas} saveKegiatan={saveKegiatan} saveKegiatanKelas={saveKegiatanKelas} saveTarget={saveTarget} saveTargetKelas={saveTargetKelas} saveZiyadah={saveZiyadah} saveZiyadahKelas={saveZiyadahKelas} resolveGuruId={resolveGuruId} selectedKelas={selectedKelas} setSelectedKelas={setSelectedKelas} deleteItem={deleteItem} writeDoc={writeDoc} />
         )}
         {portal === "wali" && (
           <PortalWali menu={menu} data={data} formData={formData} patchForm={patchForm} user={user} />
@@ -2747,7 +2760,7 @@ const PGChartCard = ({ title, items, color, type }) => (
 );
 
 // ─── PORTAL GURU ─────────────────────────────────────────────────────────────
-function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selectedKelas, setSelectedKelas, searchQuery, setSearchQuery, user, canAccess, saveAbsensiSiswa, saveAbsensiGuru, saveJurnal, saveNilaiKelas, deleteItem, loginConfig = {}, saveLoginConfig, writeDoc }) {
+function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selectedKelas, setSelectedKelas, searchQuery, setSearchQuery, user, canAccess, saveAbsensiSiswa, saveAbsensiGuru, saveJurnal, saveNilaiKelas, resolveGuruId, deleteItem, loginConfig = {}, saveLoginConfig, writeDoc }) {
 
   const __memoCache = React.useRef({});
   const localMemo = createLocalMemo(__memoCache);
@@ -3375,6 +3388,13 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
                       <div style={{ background: "#eff6ff", borderRadius: 12, padding: 16 }}>
                         <div style={{ fontWeight: 700, marginBottom: 12, color: "#1e40af" }}>⚙️ Pengaturan Input</div>
                         <div className="grid grid-2" style={{ gap: 10 }}>
+                          <div className="form-group" style={{ gridColumn: "span 2" }}>
+                            <label className="label">Guru *</label>
+                            <div className="select-wrap"><select className="select" value={formData[`nm_guru_${kelas}`] ?? resolveGuruId(kelas, "nm") ?? ""} onChange={e => patchForm({ [`nm_guru_${kelas}`]: e.target.value })}>
+                              <option value="">-- Pilih Guru --</option>
+                              {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
+                            </select></div>
+                          </div>
                           <div className="form-group">
                             <label className="label">Mapel *</label>
                             <div className="select-wrap"><select className="select" value={formData[`nm_mapel_${kelas}`] || ""} onChange={e => patchForm({ [`nm_mapel_${kelas}`]: e.target.value })}>
@@ -4513,7 +4533,7 @@ function PortalGuru({ menu, data, setData, patchData, formData, patchForm, selec
 
 
 // ─── PORTAL SISWA ─────────────────────────────────────────────────────────────
-function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user, canAccess, saveHarian, saveHarianKelas, saveKegiatan, saveKegiatanKelas, saveTarget, saveTargetKelas, saveZiyadah, saveZiyadahKelas, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
+function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user, canAccess, saveHarian, saveHarianKelas, saveKegiatan, saveKegiatanKelas, saveTarget, saveTargetKelas, saveZiyadah, saveZiyadahKelas, resolveGuruId, selectedKelas, setSelectedKelas, deleteItem, writeDoc }) {
   const __memoCache = React.useRef({});
   const localMemo = createLocalMemo(__memoCache);
 
@@ -4602,6 +4622,15 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                       <div style={{ background:"#fef3c7", borderRadius:12, padding:16 }}>
                         <div style={{ fontWeight:700, marginBottom:12, color:"#92400e" }}>⚙️ Pengaturan Input</div>
                         <div className="grid grid-2" style={{ gap:10 }}>
+                          <div className="form-group" style={{ gridColumn:"span 2" }}>
+                            <label className="label">Guru *</label>
+                            <div className="select-wrap">
+                              <select className="select" value={formData[`h_guru_${kelas}`] ?? resolveGuruId(kelas, "h") ?? ""} onChange={e => patchForm({ [`h_guru_${kelas}`]: e.target.value })}>
+                                <option value="">-- Pilih Guru --</option>
+                                {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
+                              </select>
+                            </div>
+                          </div>
                           <div className="form-group" style={{ gridColumn:"span 2" }}>
                             <label className="label">Bahasan / Topik *</label>
                             <input className="input" placeholder="Topik pembelajaran hari ini" value={formData[`h_bahasan_${kelas}`] || ""} onChange={e => patchForm({ [`h_bahasan_${kelas}`]: e.target.value })} />
@@ -4783,6 +4812,15 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                       <div style={{ background:"#e0f7fa", borderRadius:12, padding:16 }}>
                         <div style={{ fontWeight:700, marginBottom:12, color:"#006064" }}>⚙️ Pengaturan Input</div>
                         <div className="grid grid-2" style={{ gap:10 }}>
+                          <div className="form-group" style={{ gridColumn:"span 2" }}>
+                            <label className="label">Guru *</label>
+                            <div className="select-wrap">
+                              <select className="select" value={formData[`kg_guru_${kelas}`] ?? resolveGuruId(kelas, "kg") ?? ""} onChange={e => patchForm({ [`kg_guru_${kelas}`]: e.target.value })}>
+                                <option value="">-- Pilih Guru --</option>
+                                {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
+                              </select>
+                            </div>
+                          </div>
                           <div className="form-group">
                             <label className="label">Mata Pelajaran *</label>
                             <div className="select-wrap">
@@ -4955,6 +4993,15 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
                 {isOpen && (
                   <div className="card-body">
                     <div className="grid grid-2" style={{ gap:10, marginBottom:12 }}>
+                      <div className="form-group" style={{ gridColumn:"span 2" }}>
+                        <label className="label">Guru *</label>
+                        <div className="select-wrap">
+                          <select className="select" value={formData[`tr_guru_${kelas}`] ?? resolveGuruId(kelas, "tr") ?? ""} onChange={e => patchForm({ [`tr_guru_${kelas}`]: e.target.value })}>
+                            <option value="">-- Pilih Guru --</option>
+                            {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
+                          </select>
+                        </div>
+                      </div>
                       <div className="form-group">
                         <label className="label">Mata Pelajaran *</label>
                         <div className="select-wrap">
@@ -5133,9 +5180,20 @@ function PortalSiswa({ menu, data, setData, patchData, formData, patchForm, user
 
                 {isOpen && (
                   <div className="card-body">
-                    <div className="form-group" style={{ maxWidth:240, marginBottom:12 }}>
-                      <label className="label">Tanggal</label>
-                      <input className="input" type="date" value={formData[`z_tanggal_${kelas}`] || todayStr} onChange={e => patchForm({ [`z_tanggal_${kelas}`]: e.target.value })} />
+                    <div className="grid grid-2" style={{ gap:10, marginBottom:12 }}>
+                      <div className="form-group">
+                        <label className="label">Guru *</label>
+                        <div className="select-wrap">
+                          <select className="select" value={formData[`z_guru_${kelas}`] ?? resolveGuruId(kelas, "z") ?? ""} onChange={e => patchForm({ [`z_guru_${kelas}`]: e.target.value })}>
+                            <option value="">-- Pilih Guru --</option>
+                            {data.teachers.map(t => <option key={t.id} value={t.id}>{t.nama}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="form-group">
+                        <label className="label">Tanggal</label>
+                        <input className="input" type="date" value={formData[`z_tanggal_${kelas}`] || todayStr} onChange={e => patchForm({ [`z_tanggal_${kelas}`]: e.target.value })} />
+                      </div>
                     </div>
 
                     <div className="table-wrap" style={{ maxHeight:440, overflowY:"auto" }}>
