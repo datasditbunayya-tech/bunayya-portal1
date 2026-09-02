@@ -1840,7 +1840,7 @@ function App() {
     const tanggal = formData.abs_tanggal || today();
     const newRecords = formData.abs_students.map(s => ({
       id: genId(), studentId: s.id, tanggal,
-      kelas: formData.abs_kelas, status: s.status || "Hadir",
+      kelas: s.class_name || formData.abs_kelas, status: s.status || "Hadir",
       student: { nama: s.nama }
     }));
     // Update state lokal (tambah ke array) - functional updater agar tidak stale
@@ -1905,7 +1905,7 @@ function App() {
     if (!mapel) { alert("Pilih mata pelajaran terlebih dahulu!"); return; }
     const students = data.students.filter(s => s.class_name === kelas);
     const records  = students.map(s => ({
-      id: genId(), studentId: s.id, tanggal, kelas,
+      id: genId(), studentId: s.id, tanggal, kelas: s.class_name || kelas,
       kategori: mapel, mataPelajaran: mapel,
       penilaian: formData[`kg_p_${kelas}_${s.id}`] || "Sangat Baik",
       deskripsi: "",
@@ -1949,7 +1949,7 @@ function App() {
     if (!mapel) { alert("Pilih mata pelajaran terlebih dahulu!"); return; }
     const students = data.students.filter(s => s.class_name === kelas);
     const records  = students.map(s => ({
-      id: genId(), studentId: s.id, tanggal, kelas,
+      id: genId(), studentId: s.id, tanggal, kelas: s.class_name || kelas,
       mataPelajaran: mapel,
       progressSaatIni: parseInt(formData[`tr_pv_${kelas}_${s.id}`]) || 0,
       progressTotal: parseInt(formData[`tr_pt_${kelas}_${s.id}`]) || 100,
@@ -1989,7 +1989,7 @@ function App() {
       const pv = parseInt(formData[`z_pv_${kelas}_${s.id}`]) || 0;
       const pt = parseInt(formData[`z_pt_${kelas}_${s.id}`]) || 100;
       return {
-        id: genId(), studentId: s.id, tanggal, kelas,
+        id: genId(), studentId: s.id, tanggal, kelas: s.class_name || kelas,
         juz: formData[`z_juz_${kelas}_${s.id}`] || "",
         surat: formData[`z_surat_${kelas}_${s.id}`] || "",
         hasil: formData[`z_hasil_${kelas}_${s.id}`] || "Lulus",
@@ -2025,7 +2025,7 @@ function App() {
     const students = data.students.filter(s => s.class_name === kelas);
     const records  = students
       .filter(s => formData[`nm_v_${kelas}_${s.id}`])
-      .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama }, teacherId: user?.teacherId || null }));
+      .map(s => ({ id: genId(), studentId: s.id, tanggal, kelas: s.class_name || kelas, mataPelajaran: mapel, jenisNilai: jenis, skor: parseInt(formData[`nm_v_${kelas}_${s.id}`]) || 0, student: { nama: s.nama }, teacherId: user?.teacherId || null }));
     if (!records.length) { alert("Masukkan nilai untuk minimal satu siswa!"); return; }
     setData(d => { const next = { ...d, grades: [...d.grades, ...records] }; persistDataAsync(next); return next; });
     writeDocs("grades", records);
