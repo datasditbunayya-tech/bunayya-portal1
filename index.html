@@ -1626,21 +1626,15 @@ function App() {
           const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
 
           // Auto-seed master data ke Firebase kalau masih kosong
-          if (docs.length === 0 && fbColl === "guru") {
-            const batch = db.batch();
-            MOCK_TEACHERS.forEach(t => batch.set(db.collection("guru").doc(String(t.id)), t));
-            batch.commit().catch(e => console.error("Seed guru error:", e));
-          }
-          if (docs.length === 0 && fbColl === "siswa") {
-            const batch = db.batch();
-            MOCK_STUDENTS.forEach(s => batch.set(db.collection("siswa").doc(String(s.id)), s));
-            batch.commit().catch(e => console.error("Seed siswa error:", e));
-          }
-          if (docs.length === 0 && fbColl === "mapel") {
-            const batch = db.batch();
-            MOCK_SUBJECTS.forEach(s => batch.set(db.collection("mapel").doc(String(s.id)), s));
-            batch.commit().catch(e => console.error("Seed mapel error:", e));
-          }
+          // PERBAIKAN: auto-seed guru DIMATIKAN (sama seperti siswa) — snapshot yang terbaca
+          // kosong sesaat karena koneksi putus-nyambung bisa memicu data guru ditimpa ulang
+          // dengan data contoh dan menghapus perubahan yang sudah disimpan.
+          // PERBAIKAN: auto-seed siswa DIMATIKAN. Sebelumnya, setiap kali snapshot Firestore
+          // terbaca kosong (misalnya saat koneksi sempat putus/lemot), kode ini otomatis
+          // menimpa SELURUH data siswa dengan data contoh (MOCK_STUDENTS) yang tidak punya
+          // nomor WA sama sekali — inilah sebab nomor WA yang sudah tersimpan hilang lagi.
+          // Kalau memang perlu isi data awal, lakukan manual sekali lewat tombol "Tambah Siswa".
+          // PERBAIKAN: auto-seed mapel DIMATIKAN (sama seperti siswa & guru) — untuk alasan yang sama.
           if (docs.length === 0 && fbColl === "quickLinks") {
             const batch = db.batch();
             MOCK_QUICKLINKS.forEach(l => batch.set(db.collection("quickLinks").doc(String(l.id)), l));
