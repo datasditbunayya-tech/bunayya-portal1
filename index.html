@@ -1640,23 +1640,16 @@ function App() {
             MOCK_QUICKLINKS.forEach(l => batch.set(db.collection("quickLinks").doc(String(l.id)), l));
             batch.commit().catch(e => console.error("Seed quickLinks error:", e));
           }
-          // Force-update link l1/l2/l3 jika masih pakai nama/url lama
-          if (fbColl === "quickLinks" && docs.length > 0) {
-            const oldTitles = { l1: "E-Learning", l2: "Google Classroom", l3: "PPDB Online" };
-            const oldUrls   = { l3: "https://script.google.com/a/macros/admin.paud.belajar.id/s/AKfycbxXADFTW-6LkMMoi4X4k681iBwbpR-Bd5hVQLVO_rS1p9g6XtC8LfCoBezJQAGvGdM94Q/exec" };
-            const updates = MOCK_QUICKLINKS.filter(ml => {
-              const existing = docs.find(d => d.id === ml.id);
-              return existing && (
-                (oldTitles[ml.id] && existing.title === oldTitles[ml.id]) ||
-                (oldUrls[ml.id]   && existing.url   === oldUrls[ml.id])
-              );
-            });
-            if (updates.length > 0) {
-              const batch = db.batch();
-              updates.forEach(l => batch.set(db.collection("quickLinks").doc(String(l.id)), l));
-              batch.commit().catch(e => console.error("Update quickLinks error:", e));
-            }
-          }
+          // PERBAIKAN: "force-update" link l1/l2/l3 DIMATIKAN. Blok ini awalnya dimaksudkan
+          // sebagai migrasi SEKALI JALAN (mengganti judul/URL default lama ke yang baru),
+          // tapi kondisinya hanya memeriksa apakah JUDUL link itu masih sama seperti judul
+          // default lama — bukan apakah link itu belum pernah diubah sama sekali. Akibatnya,
+          // begitu ada yang mengedit URL sebuah pintasan (l1/l2/l3) tapi membiarkan judulnya
+          // tetap sama seperti sebelumnya (hal yang sangat wajar dilakukan pengguna), kode ini
+          // langsung menimpa ulang URL barunya kembali ke URL contoh (MOCK_QUICKLINKS) setiap
+          // kali data dibaca ulang dari Firestore — inilah sebab "ada inputan baru tapi masih
+          // link lama yang keluar". Kalau pintasan lama memang masih perlu diperbarui manual,
+          // edit langsung lewat menu "🔗 Pintasan" di aplikasi.
           if (docs.length === 0 && fbColl === "announcements") {
             const batch = db.batch();
             MOCK_ANNOUNCEMENTS.forEach(a => batch.set(db.collection("announcements").doc(String(a.id)), a));
