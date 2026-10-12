@@ -296,8 +296,6 @@
       try {
         const fbApp = firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
-        // Cache lokal (IndexedDB): buka berikutnya data langsung tampil dari cache, hanya selisih yang diunduh
-        try { db.enablePersistence({ synchronizeTabs: true }).catch(function (e) { console.warn("Persistence off:", e && e.code); }); } catch (e) {}
         window.__firebase = { db, ready: true };
         console.log("✅ Firebase Firestore terhubung!");
       } catch(e) {
@@ -2662,38 +2660,10 @@ const BP_EXTRA_LINKS = [{
   icon: "▶️"
 }];
 const bpNormUrl = u => String(u || "").trim().toLowerCase().replace("https://", "").replace("http://", "").replace("www.", "").split("/").filter(Boolean).join("/");
-let __persistTimer = null;
-let __persistPending = null;
-function persistDataAsync(next) {
-  __persistPending = next;
-  if (__persistTimer) clearTimeout(__persistTimer);
-  __persistTimer = setTimeout(() => {
-    const pend = __persistPending;
-    __persistTimer = null;
-    __persistPending = null;
-    const run = () => {
-      try {
-        const d = __slimForStore(pend) || {};
-        const light = {};
-        ["teachers", "students", "subjects", "surahs", "quickLinks", "announcements"].forEach(k => { if (d[k] !== undefined) light[k] = d[k]; });
-        localStorage.setItem("bunayya_data", JSON.stringify(light));
-      } catch (e) {}
-    };
-    if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: 2000 }); else run();
-  }, 800);
-}
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => {
-    if (__persistPending) {
-      try {
-        const d = __slimForStore(__persistPending) || {};
-        const light = {};
-        ["teachers", "students", "subjects", "surahs", "quickLinks", "announcements"].forEach(k => { if (d[k] !== undefined) light[k] = d[k]; });
-        localStorage.setItem("bunayya_data", JSON.stringify(light));
-      } catch (e) {}
-    }
-  });
-}
+// Data TIDAK disimpan di HP/browser. Semua data hanya di Firebase.
+window.__oldLocalData = null;
+try { const __raw = localStorage.getItem("bunayya_data"); if (__raw) window.__oldLocalData = JSON.parse(__raw); } catch (e) {}
+function persistDataAsync() {}
 function createLocalMemo(cacheRef) {
   return function localMemo(key, deps, computeFn) {
     const cache = cacheRef.current[key];
@@ -3227,6 +3197,7 @@ function App() {
         let q = db.collection(fbColl);
         if (role === "student" && user.studentId && PER_STUDENT.includes(fbColl)) q = q.where("studentId", "==", user.studentId);
         return q.onSnapshot(snap => {
+          if (snap.metadata && snap.metadata.fromCache && snap.docs.length === 0 && HEAVY.includes(fbColl)) return;
           const docs = snap.docs.map(d => ({
             ...d.data(),
             id: d.id
@@ -3256,6 +3227,49 @@ function App() {
       __unsubs = [];
     };
   }, [!!user, user && user.role, user && user.studentId]);
+  // Pemulihan satu kali: data lama yang masih ada di HP ini dan BELUM ada di Firebase dikirim ke Firebase, lalu salinan di HP dihapus.
+  React.useEffect(() => {
+    let stop = false;
+    const old = window.__oldLocalData;
+    if (!old) return;
+    const MAP = { teachers: "guru", students: "siswa", subjects: "mapel", quickLinks: "quickLinks", announcements: "announcements", studentAttendance: "absensiSiswa", teacherAttendance: "absensiGuru", journals: "jurnal", dailyReports: "harian", grades: "nilai", activities: "kegiatan", targets: "target", ziyadah: "ziyadah" };
+    const MOCKS = { teachers: MOCK_TEACHERS, students: MOCK_STUDENTS, subjects: MOCK_SUBJECTS, quickLinks: MOCK_QUICKLINKS, announcements: MOCK_ANNOUNCEMENTS, studentAttendance: MOCK_STUDENT_ATTENDANCE, teacherAttendance: MOCK_TEACHER_ATTENDANCE };
+    const run = async () => {
+      if (stop) return;
+      if (!window.__firebase || !window.__firebase.ready) { setTimeout(run, 500); return; }
+      const db = window.__firebase.db;
+      try {
+        const missing = [];
+        for (const key of Object.keys(MAP)) {
+          const arr = Array.isArray(old[key]) ? old[key] : [];
+          if (!arr.length) continue;
+          const mockIds = new Set((MOCKS[key] || []).map(m => String(m.id)));
+          const snap = await db.collection(MAP[key]).get({ source: "server" });
+          const have = new Set(snap.docs.map(d => d.id));
+          arr.forEach(item => {
+            if (item && item.id !== undefined && !have.has(String(item.id)) && !mockIds.has(String(item.id))) missing.push([MAP[key], item]);
+          });
+        }
+        if (missing.length === 0) { localStorage.removeItem("bunayya_data"); return; }
+        const perColl = {};
+        missing.forEach(([c]) => { perColl[c] = (perColl[c] || 0) + 1; });
+        const ringkas = Object.entries(perColl).map(([c, n]) => c + ": " + n).join("\n");
+        const ok = window.confirm("Ditemukan " + missing.length + " data lama di HP ini yang belum ada di Firebase:\n\n" + ringkas + "\n\nPulihkan (kirim) ke Firebase sekarang?");
+        if (!ok) return;
+        for (let i = 0; i < missing.length; i += 400) {
+          const batch = db.batch();
+          missing.slice(i, i + 400).forEach(([c, item]) => batch.set(db.collection(c).doc(String(item.id)), item));
+          await batch.commit();
+        }
+        localStorage.removeItem("bunayya_data");
+        showToast("✅ " + missing.length + " data lama berhasil dipulihkan ke Firebase");
+      } catch (e) {
+        console.error("Pemulihan data gagal:", e);
+      }
+    };
+    run();
+    return () => { stop = true; };
+  }, []);
   const [syncStatus, setSyncStatus] = useState("idle");
   const [syncMsg, setSyncMsg] = useState("");
   const [lastSync, setLastSync] = useState(null);
@@ -3289,22 +3303,22 @@ function App() {
     } catch (e) {}
     return null;
   };
-  const [data, setData] = useState(() => loadStoredData() || {
-    teachers: MOCK_TEACHERS,
-    students: MOCK_STUDENTS,
+  const [data, setData] = useState(() => ({
+    teachers: [],
+    students: [],
     subjects: MOCK_SUBJECTS,
     surahs: MOCK_SURAHS,
-    quickLinks: MOCK_QUICKLINKS,
-    announcements: MOCK_ANNOUNCEMENTS,
-    studentAttendance: MOCK_STUDENT_ATTENDANCE,
-    teacherAttendance: MOCK_TEACHER_ATTENDANCE,
+    quickLinks: [],
+    announcements: [],
+    studentAttendance: [],
+    teacherAttendance: [],
     grades: [],
     journals: [],
     dailyReports: [],
     activities: [],
     targets: [],
     ziyadah: []
-  });
+  }));
   const [loginRole, setLoginRole] = useState(null);
   const [loginForm, setLoginForm] = useState({
     username: "",
@@ -3402,7 +3416,13 @@ function App() {
   };
   const writeDocs = (collKey, items) => {
     const fbColl = FB_COLLECTIONS[collKey];
-    if (!fbColl || !window.__firebase?.ready || !items.length) return;
+    if (!fbColl || !items.length) return;
+    if (!window.__firebase?.ready) {
+      setSyncStatus("error");
+      setSyncMsg("❌ Gagal simpan: Firebase belum terhubung. Periksa internet lalu coba lagi.");
+      setTimeout(() => { setSyncStatus("idle"); setSyncMsg(""); }, 5000);
+      return;
+    }
     const {
       db
     } = window.__firebase;
